@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="description" content="Teleprompter propio, sin anuncios. Banco de pruebas de camara y voz.">
+<meta name="theme-color" content="#0A0C0F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Prompter">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Banco de Pruebas Prompter</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ground:#0A0C0F;
+    --panel:#12161B;
+    --panel-2:#171C23;
+    --line:#242C35;
+    --ink:#E6ECF2;
+    --ink-2:#93A0AD;
+    --ink-3:#5F6C79;
+    --rec:#FF4A38;
+    --ok:#4FD98A;
+    --warn:#F5B83D;
+    --bad:#FF6B5C;
+    --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --r:14px;
+  }
+
+  *{box-sizing:border-box}
+
+  body{
+    margin:0;
+    background:var(--ground);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:16px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .wrap{
+    max-width:560px;
+    margin:0 auto;
+    padding:20px 16px 64px;
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+  }
+
+  /* ---------- cabecera ---------- */
+  header{display:flex;flex-direction:column;gap:6px}
+  .eyebrow{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--ink-3);
+  }
+  h1{
+    margin:0;
+    font-size:26px;
+    font-weight:600;
+    letter-spacing:-.02em;
+    text-wrap:balance;
+  }
+  .lede{margin:0;color:var(--ink-2);font-size:14.5px;max-width:46ch}
+
+  /* ---------- bloques ---------- */
+  .card{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:var(--r);
+    padding:16px;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+  }
+  .card-title{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--ink-3);
+    margin:0;
+  }
+
+  /* ---------- selectores segmentados ---------- */
+  .field{display:flex;flex-direction:column;gap:8px}
+  .field > label{font-size:13px;color:var(--ink-2)}
+  .seg{
+    display:grid;
+    grid-auto-flow:column;
+    grid-auto-columns:1fr;
+    gap:4px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:4px;
+  }
+  .seg button{
+    appearance:none;
+    border:0;
+    background:transparent;
+    color:var(--ink-2);
+    font-family:var(--sans);
+    font-size:14px;
+    font-weight:500;
+    min-height:44px;
+    border-radius:7px;
+    cursor:pointer;
+    transition:background .15s ease,color .15s ease;
+  }
+  .seg button[aria-pressed="true"]{background:var(--ink);color:var(--ground);font-weight:600}
+  .seg button:focus-visible{outline:2px solid var(--rec);outline-offset:2px}
+
+  /* ---------- botones ---------- */
+  .btn{
+    appearance:none;
+    width:100%;
+    min-height:52px;
+    border-radius:11px;
+    border:1px solid var(--line);
+    background:var(--panel-2);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:16px;
+    font-weight:600;
+    cursor:pointer;
+    transition:background .15s ease,opacity .15s ease;
+  }
+  .btn:focus-visible{outline:2px solid var(--rec);outline-offset:2px}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn-primary{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+  .btn-rec{background:var(--rec);border-color:var(--rec);color:#fff}
+  .btn-rec[data-state="rec"]{background:transparent;color:var(--rec)}
+
+  /* ---------- visor ---------- */
+  .stage{
+    position:relative;
+    width:100%;
+    aspect-ratio:9/16;
+    background:#000;
+    border:1px solid var(--line);
+    border-radius:var(--r);
+    overflow:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .stage video{width:100%;height:100%;object-fit:cover;display:block}
+  .stage .placeholder{
+    color:var(--ink-3);
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    text-align:center;
+    padding:0 24px;
+  }
+  .mirror{transform:scaleX(-1)}
+
+  /* texto de prueba encima de la cámara */
+  .prompt-overlay{
+    position:absolute;
+    left:0;right:0;top:0;
+    background:rgba(6,8,10,.72);
+    backdrop-filter:blur(2px);
+    -webkit-backdrop-filter:blur(2px);
+    color:#fff;
+    padding:14px 16px;
+    overflow:hidden;
+    display:none;
+    pointer-events:none;
+  }
+  .prompt-overlay p{
+    margin:0;
+    font-weight:600;
+    line-height:1.35;
+    text-shadow:0 1px 3px rgba(0,0,0,.7);
+  }
+  .stage[data-overlay="on"] .prompt-overlay{display:block}
+
+  .rec-dot{
+    position:absolute;
+    top:10px;right:12px;
+    display:none;
+    align-items:center;
+    gap:6px;
+    font-family:var(--mono);
+    font-size:12px;
+    font-weight:600;
+    color:#fff;
+    background:rgba(255,74,56,.9);
+    padding:5px 9px;
+    border-radius:999px;
+    z-index:2;
+  }
+  .stage[data-rec="on"] .rec-dot{display:flex}
+  .rec-dot i{width:8px;height:8px;border-radius:50%;background:#fff;animation:blink 1s steps(2,end) infinite}
+  @keyframes blink{50%{opacity:.15}}
+  @media (prefers-reduced-motion:reduce){.rec-dot i{animation:none}}
+
+  /* ---------- sliders ---------- */
+  input[type=range]{
+    width:100%;
+    accent-color:var(--rec);
+    height:44px;
+  }
+  .slider-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  .slider-row .val{font-family:var(--mono);font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums}
+
+  /* ---------- ficha de lecturas ---------- */
+  .readout{display:flex;flex-direction:column;gap:0}
+  .row{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    gap:14px;
+    padding:11px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .row:last-child{border-bottom:0}
+  .row .k{font-size:13.5px;color:var(--ink-2);flex:0 0 auto}
+  .row .v{
+    font-family:var(--mono);
+    font-size:14px;
+    font-weight:500;
+    text-align:right;
+    font-variant-numeric:tabular-nums;
+    word-break:break-word;
+  }
+  .v[data-grade="ok"]{color:var(--ok)}
+  .v[data-grade="warn"]{color:var(--warn)}
+  .v[data-grade="bad"]{color:var(--bad)}
+  .v[data-grade="idle"]{color:var(--ink-3)}
+
+  .verdict{
+    border-radius:11px;
+    border:1px solid var(--line);
+    background:var(--panel-2);
+    padding:14px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .verdict .tag{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--ink-3);
+  }
+  .verdict .headline{font-size:17px;font-weight:600;line-height:1.3}
+  .verdict p{margin:0;font-size:14px;color:var(--ink-2)}
+
+  .note{font-size:13px;color:var(--ink-3);margin:0}
+  .err{
+    background:rgba(255,107,92,.1);
+    border:1px solid rgba(255,107,92,.35);
+    color:#FFC9C2;
+    border-radius:10px;
+    padding:12px;
+    font-size:14px;
+    display:none;
+  }
+  .err[data-on="1"]{display:block}
+
+  pre#report{
+    margin:0;
+    background:var(--ground);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:12px;
+    font-family:var(--mono);
+    font-size:12px;
+    line-height:1.65;
+    color:var(--ink-2);
+    overflow-x:auto;
+    white-space:pre;
+    -webkit-user-select:text;
+    user-select:text;
+  }
+  .playback{width:100%;border-radius:var(--r);border:1px solid var(--line);background:#000;display:none}
+  .playback[data-on="1"]{display:block}
+
+  /* ---------- seguimiento por voz ---------- */
+  .prompt-overlay w{display:inline;transition:color .12s ease,opacity .12s ease}
+  .prompt-overlay w.dicho{opacity:.3}
+  .prompt-overlay w.actual{color:#FFD84A}
+
+  .meter{
+    height:8px;
+    border-radius:999px;
+    background:var(--panel-2);
+    border:1px solid var(--line);
+    overflow:hidden;
+  }
+  .meter i{
+    display:block;
+    height:100%;
+    width:0%;
+    background:linear-gradient(90deg,var(--ok),var(--warn));
+    transition:width .06s linear;
+  }
+  .heard{
+    min-height:56px;
+    background:var(--ground);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:10px 12px;
+    font-family:var(--mono);
+    font-size:12.5px;
+    line-height:1.6;
+    color:var(--ink-2);
+    overflow-y:auto;
+    max-height:110px;
+  }
+  .heard em{color:var(--ink-3);font-style:normal}
+</style>
+<style>
+  /* --- pantalla completa cuando esta instalada en el iPhone --- */
+  html{ background:#0A0C0F; }
+  body{
+    padding-top:env(safe-area-inset-top);
+    padding-bottom:env(safe-area-inset-bottom);
+    padding-left:env(safe-area-inset-left);
+    padding-right:env(safe-area-inset-right);
+    -webkit-text-size-adjust:100%;
+    overscroll-behavior-y:none;
+  }
+  /* el texto de los controles no se selecciona sin querer al arrastrar */
+  .seg button,.btn,.card-title,.eyebrow{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <span class="eyebrow">Paso 1 de 1 · diagnóstico</span>
+    <h1>Banco de Pruebas Prompter</h1>
+    <p class="lede">Mide qué calidad de video puede grabar de verdad este teléfono desde el navegador. Con estos números decidimos si la app va por web o tiene que ser nativa.</p>
+  </header>
+
+  <div class="err" id="err"></div>
+
+  <section class="card">
+    <p class="card-title">Ajustes de la prueba</p>
+
+    <div class="field">
+      <label for="seg-cam">Cámara</label>
+      <div class="seg" id="seg-cam" role="group" aria-label="Cámara">
+        <button type="button" data-facing="user" aria-pressed="true">Frontal</button>
+        <button type="button" data-facing="environment" aria-pressed="false">Trasera</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="seg-res">Calidad que le pedimos</label>
+      <div class="seg" id="seg-res" role="group" aria-label="Calidad">
+        <button type="button" data-res="2160" aria-pressed="true">4K</button>
+        <button type="button" data-res="1080" aria-pressed="false">1080p</button>
+        <button type="button" data-res="720" aria-pressed="false">720p</button>
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="btn-start">Encender la cámara</button>
+    <p class="note">Safari va a pedirte permiso de cámara y micrófono. Es solo para esta prueba: nada sale de tu teléfono.</p>
+  </section>
+
+  <div class="stage" id="stage" data-overlay="off" data-rec="off">
+    <span class="rec-dot"><i></i><span id="rec-timer">0,0 s</span></span>
+    <div class="prompt-overlay" id="overlay"><p id="overlay-text"></p></div>
+    <span class="placeholder" id="placeholder">La cámara aparece aquí</span>
+    <video id="preview" playsinline muted autoplay></video>
+  </div>
+
+  <section class="card">
+    <p class="card-title">Cuánto tapa el texto</p>
+    <div class="field">
+      <div class="slider-row"><label for="sl-alto">Alto del panel de texto</label><span class="val" id="v-alto">30 %</span></div>
+      <input type="range" id="sl-alto" min="0" max="70" value="30" step="1">
+    </div>
+    <div class="field">
+      <div class="slider-row"><label for="sl-tam">Tamaño de la letra</label><span class="val" id="v-tam">22 px</span></div>
+      <input type="range" id="sl-tam" min="14" max="46" value="22" step="1">
+    </div>
+    <p class="note">Muévelos mientras te miras. Este texto es solo para probar la lectura: <strong>no queda grabado en el video</strong>, y eso también lo comprueba esta prueba.</p>
+  </section>
+
+  <section class="card">
+    <p class="card-title">La medición</p>
+    <button class="btn btn-rec" id="btn-rec" data-state="idle" disabled>Grabar 10 segundos</button>
+    <div class="readout" id="readout">
+      <div class="row"><span class="k">Resolución del video grabado</span><span class="v" data-grade="idle" id="r-real">—</span></div>
+      <div class="row"><span class="k">Resolución que entregó la cámara</span><span class="v" data-grade="idle" id="r-track">—</span></div>
+      <div class="row"><span class="k">Máximo que soporta esta cámara</span><span class="v" data-grade="idle" id="r-max">—</span></div>
+      <div class="row"><span class="k">Cuadros por segundo</span><span class="v" data-grade="idle" id="r-fps">—</span></div>
+      <div class="row"><span class="k">Calidad real del archivo</span><span class="v" data-grade="idle" id="r-bitrate">—</span></div>
+      <div class="row"><span class="k">Peso de 10 segundos</span><span class="v" data-grade="idle" id="r-size">—</span></div>
+      <div class="row"><span class="k">Formato del archivo</span><span class="v" data-grade="idle" id="r-mime">—</span></div>
+      <div class="row"><span class="k">Audio grabado</span><span class="v" data-grade="idle" id="r-audio">—</span></div>
+    </div>
+  </section>
+
+  <div class="verdict" id="verdict" hidden>
+    <span class="tag">Veredicto</span>
+    <span class="headline" id="verdict-head"></span>
+    <p id="verdict-body"></p>
+  </div>
+
+  <video class="playback" id="playback" playsinline controls></video>
+
+  <section class="card">
+    <p class="card-title">Prueba 2 · que el texto te siga a ti</p>
+    <p class="note">Esta es la parte cara del asunto. Toca el botón y <strong>lee en voz alta el texto de arriba</strong>. Si funciona, vas a ver las palabras apagándose solas a medida que las dices.</p>
+    <button class="btn btn-primary" id="btn-voz" disabled>Probar el seguimiento por voz</button>
+    <button class="btn" id="btn-voz-rec" disabled>Y ahora las dos juntas: grabar y seguirme</button>
+
+    <div class="field">
+      <div class="slider-row"><label>Cuánto te está oyendo el micrófono</label><span class="val" id="v-nivel">0 %</span></div>
+      <div class="meter"><i id="meter-bar"></i></div>
+    </div>
+
+    <div class="heard" id="heard"><em>Todavía no ha oído nada.</em></div>
+
+    <div class="readout">
+      <div class="row"><span class="k">Safari puede escucharte</span><span class="v" data-grade="idle" id="r-sr">—</span></div>
+      <div class="row"><span class="k">Palabras del guion que acertó</span><span class="v" data-grade="idle" id="r-acierto">—</span></div>
+      <div class="row"><span class="k">Tardanza en reaccionar</span><span class="v" data-grade="idle" id="r-latencia">—</span></div>
+      <div class="row"><span class="k">Veces que se cortó sola</span><span class="v" data-grade="idle" id="r-cortes">—</span></div>
+      <div class="row"><span class="k">Oír y grabar al mismo tiempo</span><span class="v" data-grade="idle" id="r-convive">—</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <p class="card-title">Informe para mandarle a Claude</p>
+    <pre id="report">Todavía sin datos. Graba los 10 segundos primero.</pre>
+    <button class="btn" id="btn-copy">Copiar el informe</button>
+  </section>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var TEXTO_PRUEBA = "Hoy te voy a mostrar la única cosa que nunca tienes que subirle a una inteligencia artificial, porque queda guardada aunque tú borres el chat. Léelo en voz alta como si estuvieras grabando de verdad, para saber si alcanzas a seguir el ritmo.";
+
+  var $ = function(id){ return document.getElementById(id); };
+
+  var state = {
+    facing: "user",
+    res: 2160,
+    stream: null,
+    recorder: null,
+    chunks: [],
+    startedAt: 0,
+    data: {}
+  };
+
+  var el = {
+    stage: $("stage"), preview: $("preview"), placeholder: $("placeholder"),
+    overlay: $("overlay"), overlayText: $("overlay-text"),
+    btnStart: $("btn-start"), btnRec: $("btn-rec"), btnCopy: $("btn-copy"),
+    err: $("err"), report: $("report"), playback: $("playback"),
+    recTimer: $("rec-timer"), verdict: $("verdict"),
+    vHead: $("verdict-head"), vBody: $("verdict-body")
+  };
+
+  /* ---------- el guion como palabras marcables ---------- */
+  function normalizar(txt){
+    return txt.toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+      .replace(/[^a-z0-9\s]/g," ")
+      .split(/\s+/).filter(Boolean);
+  }
+
+  var guionCrudo = TEXTO_PRUEBA.split(/\s+/);
+  var guionNorm = guionCrudo.map(function(p){
+    var n = normalizar(p);
+    return n.length ? n[0] : "";
+  });
+  var puntero = 0;
+
+  (function pintarGuion(){
+    var html = "";
+    for(var i=0;i<guionCrudo.length;i++){
+      html += "<w data-i='" + i + "'>" + guionCrudo[i].replace(/&/g,"&amp;").replace(/</g,"&lt;") + "</w> ";
+    }
+    el.overlayText.innerHTML = html;
+  })();
+
+  var palabrasEl = el.overlayText.querySelectorAll("w");
+
+  function moverPuntero(nuevo){
+    if(nuevo <= puntero) return;
+    for(var i=puntero;i<nuevo && i<palabrasEl.length;i++){
+      palabrasEl[i].className = "dicho";
+    }
+    for(var j=0;j<palabrasEl.length;j++){
+      if(palabrasEl[j].className === "actual") palabrasEl[j].className = "dicho";
+    }
+    puntero = nuevo;
+    if(palabrasEl[puntero]){
+      palabrasEl[puntero].className = "actual";
+      var off = palabrasEl[puntero].offsetTop - el.overlay.clientHeight * 0.35;
+      el.overlay.scrollTop = Math.max(0, off);
+    }
+  }
+
+  function reiniciarPuntero(){
+    puntero = 0;
+    el.overlay.scrollTop = 0;
+    for(var i=0;i<palabrasEl.length;i++){ palabrasEl[i].className = ""; }
+  }
+
+  function fallar(msg){
+    el.err.textContent = msg;
+    el.err.setAttribute("data-on","1");
+  }
+  function limpiarError(){ el.err.removeAttribute("data-on"); }
+
+  function set(id, texto, grado){
+    var n = $(id);
+    n.textContent = texto;
+    n.setAttribute("data-grade", grado || "idle");
+  }
+
+  /* ---------- selectores segmentados ---------- */
+  function conectarSeg(contenedorId, attr, alElegir){
+    var cont = $(contenedorId);
+    cont.addEventListener("click", function(ev){
+      var b = ev.target.closest("button");
+      if(!b) return;
+      var botones = cont.querySelectorAll("button");
+      for(var i=0;i<botones.length;i++){ botones[i].setAttribute("aria-pressed","false"); }
+      b.setAttribute("aria-pressed","true");
+      alElegir(b.getAttribute(attr));
+    });
+  }
+  conectarSeg("seg-cam","data-facing", function(v){
+    state.facing = v;
+    el.preview.classList.toggle("mirror", v === "user");
+    if(state.stream){ encender(); }
+  });
+  conectarSeg("seg-res","data-res", function(v){
+    state.res = parseInt(v,10);
+    if(state.stream){ encender(); }
+  });
+  el.preview.classList.add("mirror");
+
+  /* ---------- sliders del overlay ---------- */
+  function aplicarOverlay(){
+    var alto = parseInt($("sl-alto").value,10);
+    var tam  = parseInt($("sl-tam").value,10);
+    $("v-alto").textContent = alto + " %";
+    $("v-tam").textContent = tam + " px";
+    el.overlay.style.height = alto + "%";
+    el.overlayText.style.fontSize = tam + "px";
+    el.stage.setAttribute("data-overlay", alto > 0 ? "on" : "off");
+  }
+  $("sl-alto").addEventListener("input", aplicarOverlay);
+  $("sl-tam").addEventListener("input", aplicarOverlay);
+  aplicarOverlay();
+
+  /* ---------- encender cámara ---------- */
+  function apagar(){
+    if(state.stream){
+      state.stream.getTracks().forEach(function(t){ t.stop(); });
+      state.stream = null;
+    }
+  }
+
+  function encender(){
+    limpiarError();
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      fallar("Este navegador no deja usar la cámara desde una página web. Prueba en Safari o Chrome.");
+      return;
+    }
+    apagar();
+    el.btnStart.disabled = true;
+    el.btnStart.textContent = "Encendiendo…";
+
+    var alto = state.res;
+    var ancho = Math.round(alto * 16 / 9);
+    var constraints = {
+      audio: true,
+      video: {
+        facingMode: { ideal: state.facing },
+        width:  { ideal: ancho },
+        height: { ideal: alto },
+        frameRate: { ideal: 60 }
+      }
+    };
+
+    navigator.mediaDevices.getUserMedia(constraints).then(function(stream){
+      state.stream = stream;
+      el.preview.srcObject = stream;
+      el.preview.play().catch(function(){});
+      el.placeholder.style.display = "none";
+      el.btnStart.disabled = false;
+      el.btnStart.textContent = "Reiniciar la cámara";
+      el.btnRec.disabled = false;
+      if(typeof btnVoz !== "undefined" && SR){ btnVoz.disabled = false; btnVozRec.disabled = false; }
+      leerCapacidades();
+    }).catch(function(e){
+      el.btnStart.disabled = false;
+      el.btnStart.textContent = "Encender la cámara";
+      var nombre = e && e.name ? e.name : "";
+      if(nombre === "NotAllowedError"){
+        fallar("Safari bloqueó la cámara. Toca «aA» en la barra de direcciones, entra a Ajustes del sitio web y pon Cámara y Micrófono en Permitir. Después vuelve a tocar el botón.");
+      } else if(nombre === "NotFoundError" || nombre === "OverconstrainedError"){
+        fallar("No encontró esa cámara con esa calidad. Baja a 1080p y vuelve a intentar.");
+      } else {
+        fallar("No se pudo abrir la cámara (" + (nombre || "error desconocido") + "). Si estás viendo esta página dentro de otra app, ábrela directo en Safari.");
+      }
+    });
+  }
+  el.btnStart.addEventListener("click", encender);
+
+  function leerCapacidades(){
+    var vt = state.stream.getVideoTracks()[0];
+    if(!vt) return;
+    var s = vt.getSettings ? vt.getSettings() : {};
+    var c = vt.getCapabilities ? vt.getCapabilities() : {};
+
+    state.data.trackW = s.width || 0;
+    state.data.trackH = s.height || 0;
+    state.data.fps = s.frameRate ? Math.round(s.frameRate) : 0;
+    state.data.maxW = (c.width && c.width.max) ? c.width.max : 0;
+    state.data.maxH = (c.height && c.height.max) ? c.height.max : 0;
+    state.data.maxFps = (c.frameRate && c.frameRate.max) ? Math.round(c.frameRate.max) : 0;
+    state.data.label = vt.label || "sin nombre";
+
+    set("r-track", state.data.trackW ? state.data.trackW + " × " + state.data.trackH : "no informa",
+        gradoResolucion(state.data.trackH));
+    set("r-max", state.data.maxW ? state.data.maxW + " × " + state.data.maxH : "no informa", "idle");
+    set("r-fps", state.data.fps ? state.data.fps + " fps" + (state.data.maxFps ? " (máx " + state.data.maxFps + ")" : "") : "no informa",
+        state.data.fps >= 50 ? "ok" : (state.data.fps >= 29 ? "warn" : "bad"));
+  }
+
+  function gradoResolucion(h){
+    if(!h) return "idle";
+    if(h >= 2000) return "ok";
+    if(h >= 1080) return "warn";
+    return "bad";
+  }
+
+  /* ---------- elegir formato ---------- */
+  function elegirMime(){
+    var candidatos = [
+      "video/mp4;codecs=avc1.640028,mp4a.40.2",
+      "video/mp4;codecs=avc1",
+      "video/mp4",
+      "video/webm;codecs=h264",
+      "video/webm;codecs=vp9,opus",
+      "video/webm;codecs=vp8,opus",
+      "video/webm"
+    ];
+    if(typeof MediaRecorder === "undefined") return null;
+    for(var i=0;i<candidatos.length;i++){
+      try{
+        if(MediaRecorder.isTypeSupported(candidatos[i])) return candidatos[i];
+      }catch(e){}
+    }
+    return "";
+  }
+
+  /* ---------- grabar ---------- */
+  var timerInt = null;
+
+  function grabar(){
+    limpiarError();
+    if(typeof MediaRecorder === "undefined"){
+      fallar("Este navegador no puede grabar video desde una página web. Ese solo dato ya nos dice que hay que ir por app nativa.");
+      return;
+    }
+    var mime = elegirMime();
+    var opciones = { videoBitsPerSecond: 24000000, audioBitsPerSecond: 128000 };
+    if(mime) opciones.mimeType = mime;
+
+    try{
+      state.recorder = new MediaRecorder(state.stream, opciones);
+    }catch(e){
+      try{
+        state.recorder = new MediaRecorder(state.stream);
+        mime = "(el navegador impuso el suyo)";
+      }catch(e2){
+        fallar("No se pudo iniciar la grabación: " + (e2.message || e2.name));
+        return;
+      }
+    }
+
+    state.chunks = [];
+    state.recorder.ondataavailable = function(ev){
+      if(ev.data && ev.data.size > 0) state.chunks.push(ev.data);
+    };
+    state.recorder.onstop = terminar;
+    state.recorder.onerror = function(ev){
+      fallar("La grabación se cortó sola: " + (ev.error && ev.error.name ? ev.error.name : "error"));
+    };
+
+    state.data.mimePedido = mime || "el que trae por defecto";
+    state.startedAt = (typeof performance !== "undefined" && performance.now) ? performance.now() : 0;
+    state.recorder.start(1000);
+
+    el.stage.setAttribute("data-rec","on");
+    el.btnRec.setAttribute("data-state","rec");
+    el.btnRec.textContent = "Grabando… toca para cortar antes";
+    el.playback.removeAttribute("data-on");
+    el.verdict.hidden = true;
+
+    timerInt = setInterval(function(){
+      var t = (nowMs() - state.startedAt) / 1000;
+      el.recTimer.textContent = t.toFixed(1).replace(".", ",") + " s";
+      if(t >= 10) detener();
+    }, 100);
+  }
+
+  function nowMs(){
+    return (typeof performance !== "undefined" && performance.now) ? performance.now() : 0;
+  }
+
+  function detener(){
+    if(timerInt){ clearInterval(timerInt); timerInt = null; }
+    if(state.recorder && state.recorder.state !== "inactive"){
+      try{ state.recorder.stop(); }catch(e){}
+    }
+  }
+
+  el.btnRec.addEventListener("click", function(){
+    if(el.btnRec.getAttribute("data-state") === "rec"){ detener(); }
+    else { grabar(); }
+  });
+
+  function terminar(){
+    el.stage.setAttribute("data-rec","off");
+    el.btnRec.setAttribute("data-state","idle");
+    el.btnRec.textContent = "Grabar otros 10 segundos";
+
+    var segReales = (nowMs() - state.startedAt) / 1000;
+    var tipo = (state.recorder && state.recorder.mimeType) ? state.recorder.mimeType : "desconocido";
+    var blob = new Blob(state.chunks, tipo && tipo.indexOf("/") > -1 ? { type: tipo.split(";")[0] } : {});
+
+    state.data.segundos = segReales;
+    state.data.bytes = blob.size;
+    state.data.mimeReal = tipo;
+    state.data.audioPistas = state.stream.getAudioTracks().length;
+
+    var mbps = segReales > 0 ? (blob.size * 8) / segReales / 1000000 : 0;
+    state.data.mbps = mbps;
+
+    set("r-size", (blob.size/1048576).toFixed(1).replace(".", ",") + " MB en " + segReales.toFixed(1).replace(".", ",") + " s", "idle");
+    set("r-bitrate", mbps.toFixed(1).replace(".", ",") + " Mbps", mbps >= 35 ? "ok" : (mbps >= 12 ? "warn" : "bad"));
+    set("r-mime", tipo, tipo.indexOf("mp4") > -1 ? "ok" : "warn");
+    set("r-audio", state.data.audioPistas > 0 ? "sí, con micrófono" : "no", state.data.audioPistas > 0 ? "ok" : "bad");
+    if(state.conjunto && state.evaluarConvivencia){ state.evaluarConvivencia(); }
+
+    var url = URL.createObjectURL(blob);
+    el.playback.src = url;
+    el.playback.setAttribute("data-on","1");
+    el.playback.onloadedmetadata = function(){
+      state.data.realW = el.playback.videoWidth || 0;
+      state.data.realH = el.playback.videoHeight || 0;
+      set("r-real", state.data.realW ? state.data.realW + " × " + state.data.realH : "el navegador no lo informa",
+          gradoResolucion(state.data.realH));
+      veredicto();
+      informe();
+    };
+    // por si onloadedmetadata no dispara en iOS
+    setTimeout(function(){
+      if(!state.data.realH){ set("r-real", "el navegador no lo informa", "warn"); veredicto(); informe(); }
+    }, 2500);
+  }
+
+  function veredicto(){
+    var h = state.data.realH || state.data.trackH || 0;
+    var mbps = state.data.mbps || 0;
+    var maxH = state.data.maxH || 0;
+    var head, body;
+
+    if(h >= 2000 && mbps >= 25){
+      head = "La web te da calidad de sobra.";
+      body = "Grabó a la altura de la cámara nativa. La app puede ser una página web instalada con el ícono: gratis, sin anuncios y sin depender de Apple.";
+    } else if(h >= 1080 && mbps >= 12){
+      head = "La web te da 1080p decente, pero no lo máximo del teléfono.";
+      body = "Sirve de sobra para reels verticales, que es lo que subes. Si algún día quieres 4K real, ahí sí hay que ir por app nativa.";
+    } else if(h > 0){
+      head = "La web te está bajando la calidad.";
+      body = "Grabó por debajo de lo que tu cámara puede" + (maxH ? " (la cámara soporta hasta " + maxH + " de alto)" : "") + ". Con este dato conviene ir por app nativa o por teleprompter en un segundo aparato.";
+    } else {
+      head = "No se pudo medir la resolución final.";
+      body = "El navegador no informó el tamaño del video grabado. Mira el clip de arriba a pantalla completa y dime si se ve bien o se ve blando.";
+    }
+
+    el.vHead.textContent = head;
+    el.vBody.textContent = body;
+    el.verdict.hidden = false;
+  }
+
+  function informe(){
+    var d = state.data;
+    var l = [];
+    l.push("INFORME BANCO DE PRUEBAS PROMPTER");
+    l.push("navegador ....... " + navigator.userAgent);
+    l.push("camara .......... " + (d.label || "?") + "  [" + state.facing + "]");
+    l.push("calidad pedida .. " + state.res + "p");
+    l.push("track entrego ... " + (d.trackW||"?") + "x" + (d.trackH||"?") + " @ " + (d.fps||"?") + "fps");
+    l.push("camara soporta .. " + (d.maxW||"?") + "x" + (d.maxH||"?") + " @ " + (d.maxFps||"?") + "fps");
+    l.push("video grabado ... " + (d.realW||"?") + "x" + (d.realH||"?"));
+    l.push("formato pedido .. " + (d.mimePedido||"?"));
+    l.push("formato real .... " + (d.mimeReal||"?"));
+    l.push("peso ............ " + (d.bytes ? (d.bytes/1048576).toFixed(2) + " MB" : "?") + " en " + (d.segundos ? d.segundos.toFixed(2) : "?") + " s");
+    l.push("bitrate real .... " + (d.mbps ? d.mbps.toFixed(1) : "?") + " Mbps (se pidieron 24)");
+    l.push("audio ........... " + (d.audioPistas > 0 ? "si" : "no"));
+    l.push("-- voz --");
+    l.push("API voz ......... " + (d.srSoportado ? "si" : "NO"));
+    l.push("aciertos guion .. " + (d.aciertos != null ? d.aciertos + "/" + guionNorm.length + " (" + (d.aciertosPct||0) + "%)" : "sin probar"));
+    l.push("latencia ........ " + (d.latencia ? (d.latencia/1000).toFixed(2) + " s" : "sin dato"));
+    l.push("cortes solos .... " + (d.cortes != null ? d.cortes : "sin dato"));
+    l.push("errores voz ..... " + (d.errVoz || "ninguno"));
+    l.push("pico microfono .. " + (d.picoAudio != null ? d.picoAudio + "%" : "sin dato"));
+    l.push("convivencia ..... " + (d.convive || "sin probar"));
+    el.report.textContent = l.join("\n");
+  }
+
+  el.btnCopy.addEventListener("click", function(){
+    var txt = el.report.textContent;
+    var ok = function(){
+      el.btnCopy.textContent = "Copiado";
+      setTimeout(function(){ el.btnCopy.textContent = "Copiar el informe"; }, 1800);
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(ok).catch(seleccionar);
+    } else {
+      seleccionar();
+    }
+  });
+
+  function seleccionar(){
+    var r = document.createRange();
+    r.selectNodeContents(el.report);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    el.btnCopy.textContent = "Seleccionado: cópialo a mano";
+    setTimeout(function(){ el.btnCopy.textContent = "Copiar el informe"; }, 2600);
+  }
+
+  /* =========================================================
+     PRUEBA 2 · que el texto te siga a ti
+     ========================================================= */
+
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var voz = {
+    rec:null, activa:false, cortes:0, t0:0, primera:0,
+    texto:"", aciertos:0, conGrabacion:false, fin:null, errores:[]
+  };
+  var audio = { ctx:null, analyser:null, datos:null, raf:null, pico:0 };
+
+  var btnVoz = $("btn-voz");
+  var btnVozRec = $("btn-voz-rec");
+  var heard = $("heard");
+  var meterBar = $("meter-bar");
+  var vNivel = $("v-nivel");
+
+  state.data.srSoportado = !!SR;
+  set("r-sr", SR ? "sí, la API existe" : "NO — Safari no la trae", SR ? "ok" : "bad");
+  if(!SR){
+    btnVoz.textContent = "Este navegador no puede escucharte";
+  }
+
+  /* ----- medidor de micrófono (plan B: avanzar por ritmo) ----- */
+  function arrancarMedidor(){
+    if(!state.stream) return;
+    try{
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return;
+      if(!audio.ctx){ audio.ctx = new AC(); }
+      if(audio.ctx.state === "suspended"){ audio.ctx.resume(); }
+      var src = audio.ctx.createMediaStreamSource(state.stream);
+      audio.analyser = audio.ctx.createAnalyser();
+      audio.analyser.fftSize = 512;
+      audio.datos = new Uint8Array(audio.analyser.frequencyBinCount);
+      src.connect(audio.analyser);
+      audio.pico = 0;
+      medir();
+    }catch(e){ /* el medidor es accesorio */ }
+  }
+
+  function medir(){
+    if(!audio.analyser) return;
+    audio.analyser.getByteTimeDomainData(audio.datos);
+    var max = 0;
+    for(var i=0;i<audio.datos.length;i++){
+      var v = Math.abs(audio.datos[i] - 128) / 128;
+      if(v > max) max = v;
+    }
+    var pct = Math.min(100, Math.round(max * 220));
+    if(pct > audio.pico) audio.pico = pct;
+    meterBar.style.width = pct + "%";
+    vNivel.textContent = pct + " %";
+    audio.raf = requestAnimationFrame(medir);
+  }
+
+  function pararMedidor(){
+    if(audio.raf){ cancelAnimationFrame(audio.raf); audio.raf = null; }
+    audio.analyser = null;
+    meterBar.style.width = "0%";
+    vNivel.textContent = "0 %";
+  }
+
+  /* ----- el algoritmo del teleprompter ----- */
+  function recalcular(txt){
+    var pal = normalizar(txt);
+    var p = 0, ac = 0;
+    for(var i=0;i<pal.length;i++){
+      var tope = Math.min(p + 8, guionNorm.length);
+      for(var k=p;k<tope;k++){
+        if(guionNorm[k] === pal[i]){ p = k + 1; ac++; break; }
+      }
+    }
+    voz.aciertos = ac;
+    moverPuntero(p);
+  }
+
+  /* ----- reconocimiento ----- */
+  function arrancarVoz(conGrabacion){
+    if(!SR) return;
+    limpiarError();
+    reiniciarPuntero();
+    voz.activa = true;
+    voz.cortes = 0;
+    voz.primera = 0;
+    voz.texto = "";
+    voz.aciertos = 0;
+    voz.errores = [];
+    voz.conGrabacion = !!conGrabacion;
+    voz.t0 = nowMs();
+    heard.innerHTML = "<em>Escuchando… lee el texto de arriba en voz alta.</em>";
+
+    arrancarMedidor();
+    abrirReconocedor();
+
+    var dura = conGrabacion ? 11000 : 15000;
+    voz.fin = setTimeout(pararVoz, dura);
+
+    btnVoz.disabled = true;
+    btnVozRec.disabled = true;
+    (conGrabacion ? btnVozRec : btnVoz).textContent = "Escuchando… lee el texto";
+  }
+
+  function abrirReconocedor(){
+    try{
+      voz.rec = new SR();
+    }catch(e){
+      fallar("No se pudo abrir el reconocimiento de voz: " + (e.name || e.message));
+      pararVoz();
+      return;
+    }
+    voz.rec.lang = "es-CL";
+    voz.rec.continuous = true;
+    voz.rec.interimResults = true;
+    voz.rec.maxAlternatives = 1;
+
+    voz.rec.onresult = function(ev){
+      if(!voz.primera) voz.primera = nowMs() - voz.t0;
+      var completo = "";
+      for(var i=0;i<ev.results.length;i++){
+        completo += ev.results[i][0].transcript + " ";
+      }
+      voz.texto = completo.trim();
+      heard.textContent = voz.texto || "…";
+      heard.scrollTop = heard.scrollHeight;
+      recalcular(voz.texto);
+      pintarVoz();
+    };
+
+    voz.rec.onerror = function(ev){
+      var n = ev && ev.error ? ev.error : "error";
+      if(voz.errores.indexOf(n) === -1) voz.errores.push(n);
+      if(n === "not-allowed" || n === "service-not-allowed"){
+        fallar("Safari no te dejó usar el reconocimiento de voz. Revisa Ajustes, Safari, Micrófono, y también Ajustes, General, Teclado, Dictado encendido.");
+        pararVoz();
+      }
+    };
+
+    voz.rec.onend = function(){
+      if(!voz.activa) return;
+      voz.cortes++;
+      setTimeout(function(){
+        if(voz.activa){ try{ voz.rec.start(); }catch(e){ abrirReconocedor(); } }
+      }, 220);
+    };
+
+    try{ voz.rec.start(); }
+    catch(e){
+      if(e && e.name === "InvalidStateError"){ /* ya andaba */ }
+      else { fallar("El reconocimiento no arrancó: " + (e.name || e.message)); pararVoz(); }
+    }
+  }
+
+  function pararVoz(){
+    voz.activa = false;
+    if(voz.fin){ clearTimeout(voz.fin); voz.fin = null; }
+    if(voz.rec){ try{ voz.rec.stop(); }catch(e){} }
+    pararMedidor();
+
+    btnVoz.disabled = !state.stream || !SR;
+    btnVozRec.disabled = !state.stream || !SR;
+    btnVoz.textContent = "Probar el seguimiento por voz";
+    btnVozRec.textContent = "Y ahora las dos juntas: grabar y seguirme";
+
+    pintarVoz();
+    informe();
+  }
+
+  function pintarVoz(){
+    var total = guionNorm.length;
+    var pct = total ? Math.round(voz.aciertos / total * 100) : 0;
+    state.data.aciertos = voz.aciertos;
+    state.data.aciertosPct = pct;
+    state.data.latencia = voz.primera;
+    state.data.cortes = voz.cortes;
+    state.data.picoAudio = audio.pico;
+    state.data.errVoz = voz.errores.join(", ");
+
+    if(voz.aciertos > 0 || voz.texto){
+      set("r-acierto", voz.aciertos + " de " + total + "  (" + pct + " %)",
+          pct >= 70 ? "ok" : (pct >= 35 ? "warn" : "bad"));
+    }
+    if(voz.primera){
+      set("r-latencia", (voz.primera/1000).toFixed(1).replace(".", ",") + " s en reaccionar",
+          voz.primera < 1500 ? "ok" : (voz.primera < 3500 ? "warn" : "bad"));
+    } else if(!voz.activa && voz.texto === ""){
+      set("r-latencia", "no reaccionó nunca", "bad");
+    }
+    if(!voz.activa){
+      set("r-cortes", voz.cortes + (voz.cortes === 1 ? " vez" : " veces") + (voz.errores.length ? "  [" + voz.errores.join(",") + "]" : ""),
+          voz.cortes <= 1 ? "ok" : (voz.cortes <= 4 ? "warn" : "bad"));
+    }
+  }
+
+  btnVoz.addEventListener("click", function(){ arrancarVoz(false); });
+
+  btnVozRec.addEventListener("click", function(){
+    if(!state.stream){ fallar("Enciende la cámara primero."); return; }
+    state.conjunto = true;
+    arrancarVoz(true);
+    grabar();
+  });
+
+  /* veredicto de convivencia, se llama al terminar la grabación */
+  function evaluarConvivencia(){
+    if(!state.conjunto) return;
+    state.conjunto = false;
+    var grabo = (state.data.bytes || 0) > 50000;
+    var oyo = voz.aciertos > 0;
+    var micVivo = audio.pico > 4;
+    state.data.convive = (grabo && oyo) ? "si" : (grabo ? "grabo pero no oyo" : (oyo ? "oyo pero no grabo" : "ninguna de las dos"));
+
+    if(grabo && oyo){
+      set("r-convive", "sí, las dos a la vez", "ok");
+    } else if(grabo && !oyo){
+      set("r-convive", "grabó, pero dejó de oírte", "bad");
+    } else if(!grabo && oyo){
+      set("r-convive", "te oyó, pero no grabó", "bad");
+    } else {
+      set("r-convive", "no funcionó ninguna" + (micVivo ? "" : " (el micrófono quedó mudo)"), "bad");
+    }
+  }
+  state.evaluarConvivencia = evaluarConvivencia;
+
+  window.addEventListener("pagehide", function(){ voz.activa = false; pararMedidor(); apagar(); });
+})();
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function(){
+    navigator.serviceWorker.register("sw.js").catch(function(){ /* sin conexion no pasa nada */ });
+  });
+}
+</script>
+</body>
+</html>
