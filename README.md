@@ -29,8 +29,25 @@ Una sola pantalla: la cámara completa, el guion encima y los controles flotando
 en `false`. Esos filtros están hechos para videollamadas y arruinan una grabación: la voz sale
 metálica y con el volumen bailando. Audio a 192 kbps.
 
-**La cámara se pide vertical.** Se piden 2160×3840 (no 3840×2160), porque el destino son reels
-verticales. Pedirla acostada produce un video que después se ve chico y blando en el teléfono.
+**A la cámara no se le pide una forma.** Se pide **solo el alto**, nunca un `aspectRatio` ni ancho
+y alto juntos. Cuando WebKit no puede darte la forma que le exiges, no escala: **recorta el centro
+del sensor**, y todo sale con zoom. Eso fue un bug real del 27-08. La cámara entrega su modo nativo
+completo y, si el destino es 9:16 y ella no lo es, la app recorta después en un lienzo propio: así el
+visor y el archivo muestran exactamente lo mismo.
 
 **El texto no queda grabado.** Va como capa de la página encima del `<video>`; `MediaRecorder`
 toma la señal de la cámara directo. Por eso no se quema en el video y no cuesta rendimiento.
+
+## Las pruebas
+
+Corren con el Edge que ya está en el PC (no descargan navegadores) y con `playwright-core` de
+`whatsapp-mary`. Antes de decir que algo funciona, se corren las cuatro:
+
+```
+node test-robustez.js        # 20 · las fallas que sufrió en el iPhone: memoria, zoom, texto pegado
+node test-seguimiento.js     # 17 · el algoritmo del seguimiento por voz, sin navegador
+node test-guiones.js         # 11 · los 3 guiones vienen dentro de la app y se abren
+node auditoria-seguridad.js  # 21 controles de privacidad (con --vivo, contra el servidor real)
+```
+
+Los errores ya cazados y cómo se arreglaron están en `errores-sesion.md`. Se lee antes de improvisar.

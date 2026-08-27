@@ -24,7 +24,8 @@ function guardado(clave, porDefecto){
   }catch(e){ return porDefecto; }
 }
 function guardar(clave, valor){
-  try{ localStorage.setItem("pc." + clave, JSON.stringify(valor)); }catch(e){}
+  try{ localStorage.setItem("pc." + clave, JSON.stringify(valor)); return true; }
+  catch(e){ return false; }
 }
 
 /* =========================================================
@@ -66,8 +67,8 @@ function aplicarCfg(){
   marcarSeg("g-cuenta", String(cfg.cuenta));
 
   $("nota-voz").textContent = cfg.modo === "voz"
-    ? (SR ? "El texto avanza cuando dices las palabras. Si tu iPhone no lo permite, te aviso y cambio solo al modo «solo»."
-          : "Tu navegador no puede escucharte, así que este modo no va a funcionar. Usa «solo» o «con el dedo».")
+    ? (SR ? "El texto avanza cuando dices las palabras. Si tu iPhone no lo permite, te aviso y el texto sigue solo."
+          : "Este teléfono no puede escucharte: al grabar te aviso y el texto sube solo, a la velocidad de acá abajo.")
     : (cfg.modo === "auto" ? "El texto sube parejo a la velocidad de arriba." : "Lo empujas tú con el pulgar sobre el texto.");
 }
 
@@ -128,9 +129,8 @@ function cargarGuion(txt){
 
 function moverPuntero(nuevo){
   if(nuevo <= puntero || !palabrasEl.length) return;
-  for(var j=0;j<palabrasEl.length;j++){
-    if(palabrasEl[j].className === "actual") palabrasEl[j].className = "dicho";
-  }
+  /* la palabra "actual" es siempre la del puntero: no hace falta buscarla
+     recorriendo el guion entero cada vez que avanza una palabra */
   for(var i=puntero;i<nuevo && i<palabrasEl.length;i++){ palabrasEl[i].className = "dicho"; }
   puntero = nuevo;
   if(palabrasEl[puntero]){
@@ -264,16 +264,21 @@ $("b-ajustes").addEventListener("click", function(){ abrir("hoja-ajustes"); });
 var stream = null, frontal = guardado("frontal", true);
 var vTrack = null;
 
+/* EL ZOOM (queja del 27-08): a la camara NO se le pide una forma.
+   Cuando se le exige un aspectRatio o un ancho y un alto que su sensor no
+   tiene, Safari no escala: RECORTA el centro del sensor. Resultado, todo se
+   ve mas cerca. Aca se pide solo el alto -deseado, no obligatorio- y la
+   camara entrega su modo nativo con todo el campo de vision. Lo que sobre a
+   los lados lo recorta la app despues, igual que hace la camara del iPhone
+   cuando graba vertical. */
 function pedirVideo(){
-  var alto, ancho;
-  if(cfg.cal === "720"){ ancho = 720; alto = 1280; }
-  else if(cfg.cal === "1080"){ ancho = 1080; alto = 1920; }
-  else { ancho = 2160; alto = 3840; }          // vertical, no horizontal
+  var alto;
+  if(cfg.cal === "720") alto = 1280;
+  else if(cfg.cal === "1080") alto = 1920;
+  else alto = 2160;
   return {
     facingMode: { ideal: frontal ? "user" : "environment" },
-    width:  { ideal: ancho },
     height: { ideal: alto },
-    aspectRatio: { ideal: 9/16 },
     frameRate: { ideal: 30 }
   };
 }
@@ -300,6 +305,15 @@ function encender(){
     .then(function(s){
       stream = s;
       vTrack = s.getVideoTracks()[0];
+      /* iOS suelta la camara cuando entra una llamada o cambias de app: sin esto
+         la imagen se congela y no hay ninguna pista de por que */
+      if(vTrack){
+        vTrack.onended = function(){
+          if(grabando) parar();
+          avisar("El teléfono soltó la cámara. Toca el botón del centro para volver a encenderla.", true);
+          $("b-encender").hidden = false;
+        };
+      }
       $("cam").srcObject = s;
       $("cam").play().catch(function(){});
       $("b-encender").hidden = true;
@@ -323,18 +337,15 @@ function encender(){
 function notaCamara(){
   if(!vTrack || !vTrack.getSettings){ return; }
   var s = vTrack.getSettings();
+  var m = medidasSalida();
   var txt = "La cámara entrega " + (s.width || "?") + " × " + (s.height || "?")
           + " a " + (s.frameRate ? Math.round(s.frameRate) : "?") + " cuadros por segundo. ";
-  if(cfg.formato === "vertical"){
-    if(camaraEsVertical()){
-      txt += "Ya viene vertical, así que se graba tal cual.";
-    } else {
-      var alto = Math.min(1920, s.height || 1920);
-      txt += "Viene acostada, así que al grabar se recorta al centro y el video sale vertical de "
-           + Math.round(alto * 9 / 16) + " × " + alto + ".";
-    }
+  if(!necesitaRecorte()){
+    txt += "El video sale tal cual, " + m.ancho + " × " + m.alto + ".";
   } else {
-    txt += "Se graba tal cual viene, sin recortar.";
+    txt += "Al grabar se recorta a los lados y el video sale vertical de "
+         + m.ancho + " × " + m.alto + ".";
+    if(m.ancho < 1080) txt += " Ojo: queda angosto para Instagram; prueba con «Como venga».";
   }
   $("nota-cam").textContent = txt;
 }
@@ -359,7 +370,7 @@ var rec = null, escuchando = false, oidoNada = null;
    y al volver el transcript arranca de cero. Si recalculamos desde el principio
    con ese transcript corto, el puntero nunca supera al viejo y el texto SE CONGELA
    a mitad de toma. Probado en test-seguimiento.js. */
-var procesadas = 0;
+var procesadas = 0, firme = "";
 
 function avanzarCon(palabra){
   var tope = Math.min(puntero + 8, guionNorm.length);
@@ -377,9 +388,19 @@ function oirTanda(txt){
 }
 
 function escuchar(){
-  if(!SR || !guionNorm.length) return;
+  if(!guionNorm.length) return;
+  /* SU QUEJA del 27-08: "se queda re pegado ahi, la app ya no se mueve mas".
+     Cuando el telefono no tiene reconocimiento de voz -pasa en las apps
+     instaladas de iOS y con el permiso denegado- esto se iba en silencio y el
+     texto NO AVANZABA NUNCA, sin decir ni una palabra. Ahora cae solo al modo
+     automatico y lo avisa en pantalla. */
+  if(!SR){
+    avisar("Tu teléfono no deja escucharte mientras graba. El texto sube solo; la velocidad se cambia en Ajustes.", true);
+    arrancarAuto();
+    return;
+  }
   escuchando = true;
-  procesadas = 0;
+  procesadas = 0; firme = "";
   abrirRec();
   // si en 8 segundos no oyó una sola palabra, cae al modo automático
   oidoNada = setTimeout(function(){
@@ -398,22 +419,31 @@ function abrirRec(){
   rec.interimResults = true;
   rec.maxAlternatives = 1;
 
+  /* solo se miran los resultados nuevos (desde resultIndex). Antes se rearmaba
+     el transcript entero en cada golpe de voz: varias veces por segundo durante
+     un minuto, y va creciendo. */
   rec.onresult = function(ev){
-    var t = "";
-    for(var i=0;i<ev.results.length;i++){ t += ev.results[i][0].transcript + " "; }
-    oirTanda(t);
+    var interino = "";
+    for(var i = ev.resultIndex; i < ev.results.length; i++){
+      var r = ev.results[i];
+      if(r.isFinal) firme += r[0].transcript + " ";
+      else interino += r[0].transcript + " ";
+    }
+    oirTanda(firme + interino);
   };
+  /* "no-speech" y "aborted" son normales -un silencio, o el corte de iOS-: esos
+     se dejan pasar. Cualquier otro significa que no va a oir mas, y quedarse
+     mudo es justo el bug que sufrio: se cae al modo automatico y se avisa. */
   rec.onerror = function(ev){
     var n = ev && ev.error ? ev.error : "";
-    if(n === "not-allowed" || n === "service-not-allowed"){
-      avisar("Tu iPhone no deja escuchar mientras graba. Cambio a modo automático.", true);
-      dejarDeEscuchar();
-      arrancarAuto();
-    }
+    if(n === "no-speech" || n === "aborted") return;
+    avisar("Tu iPhone dejó de escuchar (" + (n || "error") + "). El texto sigue solo.", true);
+    dejarDeEscuchar();
+    arrancarAuto();
   };
   rec.onend = function(){
     if(!escuchando) return;
-    procesadas = 0;                 /* la proxima tanda arranca de cero */
+    procesadas = 0; firme = "";     /* la proxima tanda arranca de cero */
     setTimeout(function(){ if(escuchando){ try{ rec.start(); }catch(e){ abrirRec(); } } }, 200);
   };
   try{ rec.start(); }catch(e){}
@@ -447,6 +477,20 @@ function arrancarAuto(){
 }
 function pararAuto(){ if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null; } }
 
+/* ENSAYAR SIN GRABAR. Antes el texto solo se movia mientras grababas, asi que
+   no habia forma de ensayar: se quedaba quieto y parecia colgado. Un toque en
+   el texto lo arranca, otro lo para. Mientras grabas manda el modo elegido. */
+$("prompter").addEventListener("click", function(){
+  if(grabando || cfg.modo === "dedo") return;
+  if(autoRaf){ pararAuto(); avisar("Ensayo en pausa."); return; }
+  var p = $("prompter");
+  var total = p.scrollHeight - p.clientHeight;
+  if(total <= 2){ avisar("El guion cabe entero en pantalla, no hay nada que subir."); return; }
+  if(p.scrollTop >= total - 2){ reiniciarGuion(); avisar("Vuelvo al principio."); return; }
+  arrancarAuto();
+  avisar("Ensayando. Toca el texto otra vez para parar.");
+});
+
 /* =========================================================
    6b · recorte a vertical
    Si la camara entrega el video acostado (pasa seguido en iPhone), lo
@@ -455,27 +499,49 @@ function pararAuto(){ if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null
    ========================================================= */
 var lienzo = null, pincel = null, pintarRaf = null, streamLienzo = null;
 
-function camaraEsVertical(){
-  if(!vTrack || !vTrack.getSettings) return true;
-  var st = vTrack.getSettings();
-  if(!st.width || !st.height) return true;
-  return st.height >= st.width;
+/* lo que de verdad entrega la camara ahora mismo */
+function medidasCamara(){
+  var v = $("cam");
+  var st = (vTrack && vTrack.getSettings) ? vTrack.getSettings() : {};
+  return {
+    ancho: st.width || (v && v.videoWidth) || 0,
+    alto:  st.height || (v && v.videoHeight) || 0
+  };
 }
 
+/* 9:16 es 0,5625. Se compara la FORMA, no si es alta o ancha: una camara que
+   entrega cuadrado (1:1) o 3:4 tambien hay que recortarla, y antes no se hacia
+   -el visor mostraba 9:16 y el archivo salia cuadrado-. */
 function necesitaRecorte(){
-  return cfg.formato === "vertical" && !camaraEsVertical();
+  if(cfg.formato !== "vertical") return false;
+  var c = medidasCamara();
+  if(!c.ancho || !c.alto) return false;
+  return Math.abs(c.ancho / c.alto - 9/16) > 0.01;
+}
+
+/* el tamano exacto del archivo que va a salir */
+function medidasSalida(){
+  var c = medidasCamara();
+  if(!c.ancho || !c.alto) return { ancho:0, alto:0 };
+  if(!necesitaRecorte()) return { ancho:c.ancho, alto:c.alto };
+  /* Cuando hay que recortar, el recorte lo pinta la app cuadro a cuadro sobre un
+     lienzo, y eso lo paga el telefono. Por encima de 1920 de alto no vale la
+     pena: Instagram pide 1080x1920 y un lienzo de 4K a 30 cuadros ahoga al
+     iPhone. Si la camara ya entrega 9:16, no se toca nada y se graba tal cual,
+     aunque sea 4K, porque de eso se encarga el hardware. */
+  var alto = Math.min(1920, c.alto);
+  var ancho = Math.min(Math.round(alto * 9 / 16), Math.round(c.ancho * alto / c.alto));
+  if(ancho % 2) ancho++;
+  if(alto % 2) alto++;
+  return { ancho:ancho, alto:alto };
 }
 
 function armarLienzo(){
+  soltarLienzo();          /* si quedaba uno vivo, se suelta: dos pintores a la vez ahogan el telefono */
   var v = $("cam");
-  var st = vTrack.getSettings ? vTrack.getSettings() : {};
-  var altoReal = st.height || v.videoHeight || 1920;
-
-  /* el alto manda: conservamos toda la altura de la camara y recortamos a los lados */
-  var alto = Math.min(1920, altoReal);
-  var ancho = Math.round(alto * 9 / 16);
-  if(ancho % 2) ancho++;
-  if(alto % 2) alto++;
+  var m = medidasSalida();
+  var ancho = m.ancho, alto = m.alto;
+  if(!ancho || !alto) throw new Error("la camara todavia no entrega imagen");
 
   if(!lienzo){
     lienzo = document.createElement("canvas");
@@ -513,6 +579,7 @@ function soltarLienzo(){
    7 · grabar
    ========================================================= */
 var grabador = null, trozos = [], grabando = false, t0 = 0, relojInt = null, blobFinal = null, wake = null;
+var pesado = 0, pesados = false;
 
 function mimeBueno(){
   var c = ["video/mp4;codecs=avc1.640028,mp4a.40.2","video/mp4;codecs=avc1","video/mp4",
@@ -522,34 +589,56 @@ function mimeBueno(){
   return "";
 }
 
+/* El chorro de datos se calcula sobre los pixeles REALES del archivo (antes se
+   calculaba sobre los de la camara, que con recorte son muchos mas).
+   Y baja de 45 a 24 Mbps en 4K: un minuto a 45 Mbps son 337 MB metidos en la
+   memoria del telefono, que es lo que ahogaba a Safari. A 24 Mbps la imagen se
+   ve igual -Instagram recomprime a menos de 10- y ocupa la mitad. */
 function bitrateVideo(){
-  if(!vTrack || !vTrack.getSettings) return 12000000;
-  var s = vTrack.getSettings();
-  var px = (s.width || 1080) * (s.height || 1920);
-  if(necesitaRecorte()) px = px * 9 / 16;    /* al recortar quedan menos pixeles */
-  if(px >= 7000000) return 45000000;   // 4K
-  if(px >= 2000000) return 20000000;   // 1080p
-  return 10000000;
+  var m = medidasSalida();
+  var px = (m.ancho || 1080) * (m.alto || 1920);
+  if(px >= 6000000) return 24000000;   // 4K
+  if(px >= 1800000) return 16000000;   // 1080p
+  return 9000000;
 }
+
+var cuentaInt = null, pidiendoCam = false;
 
 $("b-rec").addEventListener("click", function(){
   if(grabando){ parar(); return; }
-  if(!stream){ encender().then(cuentaYGrabar).catch(function(){}); return; }
+  if(cuentaInt){ cancelarCuenta(); avisar("Cuenta cancelada."); return; }
+  if(pidiendoCam) return;                 /* ya vamos, no abrir dos camaras */
+  if(!stream){
+    pidiendoCam = true;
+    encender().then(cuentaYGrabar).catch(function(){}).then(function(){ pidiendoCam = false; });
+    return;
+  }
   cuentaYGrabar();
 });
 
+/* tocar la cuenta regresiva la cancela: antes tapaba la pantalla y no habia
+   como arrepentirse hasta que arrancaba sola */
+$("cuenta").addEventListener("click", function(){
+  if(cuentaInt){ cancelarCuenta(); avisar("Cuenta cancelada."); }
+});
+
+function cancelarCuenta(){
+  if(cuentaInt){ clearInterval(cuentaInt); cuentaInt = null; }
+  $("cuenta").removeAttribute("data-on");
+}
+
 function cuentaYGrabar(){
   cerrarTodo();
+  cancelarCuenta();
   var n = parseInt(cfg.cuenta, 10) || 0;
   if(!n){ arrancar(); return; }
   var c = $("cuenta");
   c.setAttribute("data-on","1");
   $("cuenta-n").textContent = n;
-  var i = setInterval(function(){
+  cuentaInt = setInterval(function(){
     n--;
     if(n <= 0){
-      clearInterval(i);
-      c.removeAttribute("data-on");
+      cancelarCuenta();
       arrancar();
     } else {
       $("cuenta-n").textContent = n;
@@ -562,9 +651,11 @@ function arrancar(){
     avisar("Este navegador no puede grabar video. Ábrelo en Safari.", true);
     return;
   }
+  pararAuto();          /* si venia ensayando, se corta */
   reiniciarGuion();
   trozos = [];
   blobFinal = null;
+  pesados = false;
 
   var op = { videoBitsPerSecond: bitrateVideo(), audioBitsPerSecond: 192000 };
   var m = mimeBueno();
@@ -590,11 +681,29 @@ function arrancar(){
     }
   }
 
-  grabador.ondataavailable = function(ev){ if(ev.data && ev.data.size) trozos.push(ev.data); };
+  grabador.ondataavailable = function(ev){
+    if(!ev.data || !ev.data.size) return;
+    trozos.push(ev.data);
+    pesado += ev.data.size;
+    /* el video vive en la memoria del telefono hasta que lo guardas: pasados
+       ~350 MB Safari empieza a ahogarse, y avisar es mejor que morir */
+    if(!pesados && pesado > 350 * 1048576){
+      pesados = true;
+      avisar("La toma ya pesa 350 MB. Párala y guárdala antes de que el teléfono se atore.", true);
+    }
+  };
   grabador.onstop = cerrarToma;
-  grabador.onerror = function(){ avisar("La grabación se cortó sola.", true); };
+  /* si Safari mata el grabador -se queda sin memoria, entra una llamada-, antes
+     la app se quedaba con el punto rojo puesto para siempre y no reaccionaba:
+     ese es el otro "se queda pegado". Ahora se cierra la toma como si hubieras
+     tocado parar, y se guarda lo que alcanzo a grabar. */
+  grabador.onerror = function(){
+    avisar("La grabación se cortó sola. Guardé lo que alcanzó a grabar.", true);
+    parar();
+  };
 
   grabador.start(1000);
+  pesado = 0;
   grabando = true;
   t0 = Date.now();
   app.setAttribute("data-rec","1");
@@ -619,18 +728,24 @@ function parar(){
   app.setAttribute("data-rec","0");
   $("rec-time").textContent = "0:00";
   try{ grabador.stop(); }catch(e){}
+  /* red de seguridad: si el grabador murio y nunca avisa que se detuvo, el
+     pintor del recorte se quedaria dando vueltas para siempre comiendo bateria */
+  setTimeout(function(){ if(!grabando) soltarLienzo(); }, 2500);
 }
 
 function cerrarToma(){
   soltarLienzo();
   var tipo = (grabador && grabador.mimeType) ? grabador.mimeType.split(";")[0] : "video/mp4";
   blobFinal = new Blob(trozos, { type: tipo });
+  trozos = [];                       /* los pedazos ya estan dentro del blob: sobran */
   if(!blobFinal.size){ avisar("No quedó nada grabado. Prueba de nuevo.", true); return; }
 
-  var url = URL.createObjectURL(blobFinal);
-  $("rev").src = url;
+  soltarRevision();                  /* la toma anterior se suelta ANTES de cargar esta */
+  urlRevision = URL.createObjectURL(blobFinal);
+  $("rev").src = urlRevision;
   $("b-ultimo").disabled = false;
 
+  $("rev-datos").textContent = (blobFinal.size / 1048576).toFixed(1).replace(".", ",") + " MB · cargando…";
   $("rev").onloadedmetadata = function(){
     var v = $("rev");
     var seg = (isFinite(v.duration) && v.duration) ? v.duration : (Date.now() - t0) / 1000;
@@ -638,11 +753,39 @@ function cerrarToma(){
       + " · " + (blobFinal.size / 1048576).toFixed(1).replace(".", ",") + " MB · "
       + seg.toFixed(1).replace(".", ",") + " s";
   };
+  /* si el telefono no puede abrir el video -se quedo sin memoria, o el formato
+     no le sirve- hay que decirlo: antes quedaba un recuadro negro sin ninguna
+     explicacion, que es justo lo que le salio el 27-08 */
+  $("rev").onerror = function(){
+    $("rev-datos").textContent = (blobFinal.size / 1048576).toFixed(1).replace(".", ",")
+      + " MB · el teléfono no pudo abrirlo aquí";
+    avisar("El video quedó grabado pero el teléfono no puede mostrarlo acá. Igual puedes guardarlo en Fotos.", true);
+  };
   abrir("hoja-video");
 }
 
 $("b-ultimo").addEventListener("click", function(){ if(blobFinal) abrir("hoja-video"); });
-$("b-otra").addEventListener("click", function(){ cerrarTodo(); reiniciarGuion(); });
+
+/* Al volver a grabar el video de la revision se queda pausado. Antes seguia
+   sonando por debajo -y se colaba en la toma nueva-. */
+$("b-otra").addEventListener("click", function(){
+  var v = $("rev");
+  try{ v.pause(); }catch(e){}
+  cerrarTodo();
+  reiniciarGuion();
+});
+
+/* suelta de la memoria el video que se estaba revisando */
+var urlRevision = null;
+function soltarRevision(){
+  var v = $("rev");
+  try{ v.pause(); }catch(e){}
+  if(urlRevision){
+    try{ v.removeAttribute("src"); v.load(); }catch(e){}
+    try{ URL.revokeObjectURL(urlRevision); }catch(e){}
+    urlRevision = null;
+  }
+}
 
 /* pantalla siempre encendida mientras grabas */
 function pedirWakeLock(){
@@ -657,8 +800,11 @@ function soltarWakeLock(){ if(wake){ try{ wake.release(); }catch(e){} wake = nul
 /* =========================================================
    8 · guardar en Fotos
    ========================================================= */
+var compartiendo = false;
 $("b-fotos").addEventListener("click", function(){
-  if(!blobFinal){ return; }
+  if(!blobFinal || compartiendo){ return; }
+  compartiendo = true;
+  setTimeout(function(){ compartiendo = false; }, 1500);
   var tipo = blobFinal.type || "video/mp4";
   var ext = tipo.indexOf("webm") > -1 ? "webm" : "mp4";
   var nombre = "prompter-" + Math.floor((Date.now() - 1750000000000) / 1000) + "." + ext;
@@ -719,7 +865,10 @@ conectarSeg("g-modo","modo", function(){
   else if(cfg.modo === "auto") arrancarAuto();
 });
 conectarSeg("g-enc","enc");
-conectarSeg("g-formato","formato", notaCamara);
+conectarSeg("g-formato","formato", function(){
+  notaCamara();
+  if(grabando) avisar("El formato nuevo se aplica en la próxima toma, no en esta.");
+});
 conectarSeg("g-esp","esp");
 conectarSeg("g-cuenta","cuenta");
 conectarSeg("g-cal","cal", function(){ if(stream && !grabando) encender().catch(function(){}); });
@@ -747,7 +896,10 @@ $("b-guardar-guion").addEventListener("click", function(){
   var gs = listaGuiones();
   gs.unshift({ nombre: nombre, texto: txt, palabras: txt.split(" ").length });
   if(gs.length > 40) gs.length = 40;
-  guardar("guiones", gs);
+  if(!guardar("guiones", gs)){
+    avisar("No cabe: el teléfono no tiene espacio para más guiones. Borra alguno.", true);
+    return;
+  }
   pintarLista();
   avisar("Guardado.");
 });
@@ -767,9 +919,41 @@ contarTa();
 encender().catch(function(){});
 
 document.addEventListener("visibilitychange", function(){
-  if(document.hidden && grabando) parar();
+  if(document.hidden){
+    if(grabando) parar();
+    return;
+  }
+  /* iOS deja el video de la camara en pausa al volver de otra app: sin esto la
+     imagen se queda congelada y parece que la app murio */
+  var v = $("cam");
+  if(stream && v.paused) v.play().catch(function(){});
 });
-window.addEventListener("pagehide", function(){ dejarDeEscuchar(); apagarCam(); });
+
+/* el telefono acostado con formato vertical: avisar una vez, no cada rato */
+var avisoGiro = false;
+function mirarGiro(){
+  var acostado = window.matchMedia && window.matchMedia("(orientation: landscape)").matches;
+  if(acostado && cfg.formato === "vertical" && !avisoGiro){
+    avisoGiro = true;
+    avisar("Tienes el teléfono acostado y el formato en vertical: gíralo, o cambia el formato en Ajustes.", true);
+  }
+  if(!acostado) avisoGiro = false;
+}
+window.addEventListener("orientationchange", function(){ setTimeout(mirarGiro, 300); });
+window.addEventListener("resize", mirarGiro);
+window.addEventListener("pagehide", function(){
+  if(grabando) parar();          /* primero cerrar la toma, despues apagar */
+  dejarDeEscuchar(); pararAuto(); soltarLienzo(); apagarCam();
+});
+
+/* sonda para el banco de pruebas: solo lee, no toca nada */
+window.__PC_DIAG = function(){
+  return {
+    grabando: grabando, trozos: trozos.length, puntero: puntero,
+    escuchando: escuchando, auto: !!autoRaf, pintando: !!pintarRaf,
+    urlRevision: !!urlRevision, salida: medidasSalida()
+  };
+};
 
 })();
 

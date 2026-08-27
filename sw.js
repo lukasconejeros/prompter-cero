@@ -3,7 +3,7 @@
    El cache es solo la red de seguridad para cuando no hay senal.
    Asi nunca te queda pegada una version vieja en el telefono. */
 
-var CACHE = "prompter-cero-v4";
+var CACHE = "prompter-cero-v5";
 var ESENCIALES = [
   "./",
   "./index.html",
@@ -45,9 +45,16 @@ self.addEventListener("fetch", function (ev) {
   var url = new URL(req.url);
   if (url.origin !== self.location.origin) return; // no deberia haber nada de afuera
 
-  var esPagina = req.mode === "navigate" || url.pathname.endsWith(".html") || url.pathname.endsWith("/");
+  /* Red primero para TODO lo que es la app: la pagina, el codigo y los estilos.
+     Antes solo la pagina venia de la red y el app.js salia del cache, asi que un
+     arreglo podia no llegar NUNCA al telefono aunque el HTML fuera nuevo.
+     (Paso de verdad: el commit 1930813 cambio app.js y no subio la version del
+     cache.) Solo los iconos y el manifiesto, que no cambian, van del cache. */
+  var esApp = req.mode === "navigate" ||
+              /\.(html|js|css)$/.test(url.pathname) ||
+              url.pathname.endsWith("/");
 
-  if (esPagina) {
+  if (esApp) {
     // red primero: siempre la version mas nueva
     ev.respondWith(
       fetch(req).then(function (res) {
