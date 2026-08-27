@@ -154,6 +154,50 @@ function contarTa(){
   $("duracion").textContent = Math.floor(seg/60) + ":" + ("0" + (seg%60)).slice(-2);
 }
 
+/* ---- mis guiones: los 3 de la marca, vienen dentro de la app ----
+   Los escribe `guiones.js`, que genera un script desde los .md de skill-videos-ia.
+   Van aparte de los guardados: estos no se borran ni se pierden al limpiar el telefono. */
+function misGuiones(){
+  var g = window.GUIONES_LUKAS;
+  return (g && g.length) ? g : [];
+}
+
+function pintarMios(){
+  var gs = misGuiones();
+  var cont = $("lista-mios");
+  if(!cont) return;
+  if(!gs.length){
+    cont.innerHTML = '<p class="vacia">No se pudieron cargar.</p>';
+    return;
+  }
+  var html = "";
+  for(var i=0;i<gs.length;i++){
+    var seg = Math.round((Number(gs[i].palabras)||0) / PALABRAS_POR_MINUTO * 60);
+    html += '<div class="item">'
+          + '<span class="n"><b></b><small>' + (Number(gs[i].palabras)||0) + ' palabras · '
+          + Math.floor(seg/60) + ":" + ("0"+(seg%60)).slice(-2) + '</small></span>'
+          + '<button data-mio="' + i + '">Abrir</button>'
+          + '</div>';
+  }
+  cont.innerHTML = html;
+  var nombres = cont.querySelectorAll(".n b");
+  for(var j=0;j<nombres.length;j++){ nombres[j].textContent = gs[j].nombre; }
+}
+
+/* Tocar uno lo deja LISTO: lo carga en el prompter y cierra la hoja.
+   Es lo que pidio: "que yo lo apriete y en mi telefono se abra". */
+$("lista-mios").addEventListener("click", function(ev){
+  var b = ev.target.closest("button");
+  if(!b || !b.hasAttribute("data-mio")) return;
+  var g = misGuiones()[parseInt(b.getAttribute("data-mio"),10)];
+  if(!g) return;
+  $("ta").value = g.texto;
+  contarTa();
+  cargarGuion(g.texto);   /* cargarGuion ya lo deja guardado como el guion actual */
+  cerrarTodo();
+  avisar(g.nombre + " · " + guionCrudo.length + " palabras.");
+});
+
 /* ---- guiones guardados ---- */
 function listaGuiones(){ return guardado("guiones", []); }
 
@@ -714,6 +758,7 @@ $("b-limpiar").addEventListener("click", function(){
 
 /* ---- arranque ---- */
 aplicarCfg();
+pintarMios();
 pintarLista();
 var ultimo = guardado("guionActual", "");
 if(ultimo){ $("ta").value = ultimo; cargarGuion(ultimo); }
