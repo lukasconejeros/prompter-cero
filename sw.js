@@ -3,10 +3,12 @@
    El cache es solo la red de seguridad para cuando no hay senal.
    Asi nunca te queda pegada una version vieja en el telefono. */
 
-var CACHE = "prompter-cero-v2";
+var CACHE = "prompter-cero-v3";
 var ESENCIALES = [
   "./",
   "./index.html",
+  "./app.css",
+  "./app.js",
   "./prueba.html",
   "./manifest.webmanifest",
   "./icon-180.png",
@@ -40,7 +42,7 @@ self.addEventListener("fetch", function (ev) {
   if (req.method !== "GET") return;
 
   var url = new URL(req.url);
-  if (url.origin !== self.location.origin) return; // las fuentes de Google las maneja el navegador
+  if (url.origin !== self.location.origin) return; // no deberia haber nada de afuera
 
   var esPagina = req.mode === "navigate" || url.pathname.endsWith(".html") || url.pathname.endsWith("/");
 
