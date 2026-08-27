@@ -406,6 +406,7 @@
       <div class="row"><span class="k">Peso de 10 segundos</span><span class="v" data-grade="idle" id="r-size">—</span></div>
       <div class="row"><span class="k">Formato del archivo</span><span class="v" data-grade="idle" id="r-mime">—</span></div>
       <div class="row"><span class="k">Audio grabado</span><span class="v" data-grade="idle" id="r-audio">—</span></div>
+      <div class="row"><span class="k">Sacar el video al carrete</span><span class="v" data-grade="idle" id="r-guardar">—</span></div>
     </div>
   </section>
 
@@ -416,6 +417,12 @@
   </div>
 
   <video class="playback" id="playback" playsinline controls></video>
+
+  <section class="card" id="card-guardar" hidden>
+    <p class="card-title">Prueba 3 · sacar el video del navegador</p>
+    <p class="note">De nada sirve grabar bonito si el video se queda encerrado en el navegador. Este botón prueba si el iPhone te deja mandarlo a tu carrete.</p>
+    <button class="btn btn-primary" id="btn-guardar">Guardar el video en tu carrete</button>
+  </section>
 
   <section class="card">
     <p class="card-title">Prueba 2 · que el texto te siga a ti</p>
@@ -751,6 +758,7 @@
 
     state.data.segundos = segReales;
     state.data.bytes = blob.size;
+    state.blob = blob;
     state.data.mimeReal = tipo;
     state.data.audioPistas = state.stream.getAudioTracks().length;
 
@@ -766,6 +774,7 @@
     var url = URL.createObjectURL(blob);
     el.playback.src = url;
     el.playback.setAttribute("data-on","1");
+    $("card-guardar").hidden = false;
     el.playback.onloadedmetadata = function(){
       state.data.realW = el.playback.videoWidth || 0;
       state.data.realH = el.playback.videoHeight || 0;
@@ -828,6 +837,7 @@
     l.push("errores voz ..... " + (d.errVoz || "ninguno"));
     l.push("pico microfono .. " + (d.picoAudio != null ? d.picoAudio + "%" : "sin dato"));
     l.push("convivencia ..... " + (d.convive || "sin probar"));
+    l.push("guardar carrete . " + (d.guardar || "sin probar"));
     el.report.textContent = l.join("\n");
   }
 
@@ -1077,6 +1087,88 @@
     }
   }
   state.evaluarConvivencia = evaluarConvivencia;
+
+  /* =========================================================
+     PRUEBA 3 · sacar el video del navegador al carrete
+     De nada sirve grabar bien si el archivo se queda encerrado aqui.
+     ========================================================= */
+
+  var btnGuardar = $("btn-guardar");
+
+  function extensionDe(tipo){
+    if(!tipo) return "mp4";
+    if(tipo.indexOf("mp4") > -1) return "mp4";
+    if(tipo.indexOf("webm") > -1) return "webm";
+    return "mp4";
+  }
+
+  function guardarVideo(){
+    limpiarError();
+    if(!state.blob){ fallar("Todavia no hay video. Graba los 10 segundos primero."); return; }
+
+    var tipo = state.blob.type || "video/mp4";
+    var nombre = "prompter-prueba." + extensionDe(tipo);
+    var archivo = null;
+
+    try{
+      archivo = new File([state.blob], nombre, { type: tipo });
+    }catch(e){ archivo = null; }
+
+    // Camino 1: la hoja de compartir de iOS, que trae "Guardar video"
+    if(archivo && navigator.canShare && navigator.canShare({ files: [archivo] })){
+      btnGuardar.disabled = true;
+      btnGuardar.textContent = "Abriendo el menu de compartir...";
+      navigator.share({ files: [archivo], title: "Prueba del prompter" }).then(function(){
+        state.data.guardar = "si, por compartir";
+        set("r-guardar", "si, por el menu de compartir", "ok");
+        btnGuardar.textContent = "Guardado. Revisa tu carrete";
+        btnGuardar.disabled = false;
+        informe();
+      }).catch(function(e){
+        var n = e && e.name ? e.name : "";
+        if(n === "AbortError"){
+          state.data.guardar = "si (la cancelaste tu)";
+          set("r-guardar", "si, el menu abrio bien", "ok");
+          btnGuardar.textContent = "Guardar el video en tu carrete";
+        } else {
+          state.data.guardar = "fallo compartir: " + n;
+          set("r-guardar", "el menu de compartir fallo (" + n + ")", "bad");
+          btnGuardar.textContent = "Reintentar";
+          descargaDirecta(nombre);
+        }
+        btnGuardar.disabled = false;
+        informe();
+      });
+      return;
+    }
+
+    // Camino 2: descarga directa
+    state.data.guardar = "sin menu de compartir, probando descarga";
+    set("r-guardar", "este navegador no comparte archivos", "warn");
+    descargaDirecta(nombre);
+    informe();
+  }
+
+  function descargaDirecta(nombre){
+    try{
+      var url = URL.createObjectURL(state.blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = nombre;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function(){
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 4000);
+      fallar("Se intento la descarga directa. Si no paso nada, mantén el dedo apretado sobre el video de arriba y elige Guardar en Fotos.");
+    }catch(e){
+      fallar("No se pudo bajar el video: " + (e.message || e.name) + ". Manten el dedo apretado sobre el video y elige Guardar en Fotos.");
+    }
+  }
+
+  btnGuardar.addEventListener("click", guardarVideo);
 
   window.addEventListener("pagehide", function(){ voz.activa = false; pararMedidor(); apagar(); });
 })();
