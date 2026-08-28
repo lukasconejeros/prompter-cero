@@ -1,6 +1,14 @@
 (function(){
 "use strict";
 
+/* LA VERSION, a la vista. El 27-08 Lukas no tenia como distinguir "no lo
+   arreglaron" de "mi iPhone abrio la version vieja que tenia guardada".
+   Ahora la app la dice en Ajustes y avisa sola cuando se actualiza.
+   Al cambiarla hay que cambiar tambien el cache de sw.js: la prueba
+   test-dedo-y-version.js falla si no coinciden. */
+var VERSION = "v6";
+window.__PC_VERSION = VERSION;
+
 /* =========================================================
    0 · utilidades
    ========================================================= */
@@ -334,6 +342,7 @@ function encender(){
     });
 }
 
+var avisoCam = false;
 function notaCamara(){
   if(!vTrack || !vTrack.getSettings){ return; }
   var s = vTrack.getSettings();
@@ -348,6 +357,21 @@ function notaCamara(){
     if(m.ancho < 1080) txt += " Ojo: queda angosto para Instagram; prueba con «Como venga».";
   }
   $("nota-cam").textContent = txt;
+
+  /* EL ZOOM, dicho en pantalla y no escondido en Ajustes (27-08).
+     Lukas volvio a ver zoom despues del arreglo de las constraints, y no tenia
+     como saber por que: si la camara entrega la imagen ACOSTADA, para que el
+     archivo salga vertical hay que recortar los lados, y eso ES un zoom. No es
+     un bug que se pueda tapar: es lo que da el sensor. Lo que si se puede es
+     decirselo con el dato y la salida a mano. Una sola vez por encendido. */
+  if(!avisoCam){
+    avisoCam = true;
+    if(necesitaRecorte()){
+      avisar("Tu cámara entrega " + s.width + " × " + s.height + ", acostada. Para que el video salga vertical le recorto los lados, y por eso se ve más cerca. Si lo quieres completo, pon Formato «Como venga» en Ajustes.", true);
+    } else {
+      avisar("Cámara lista: entrega " + s.width + " × " + s.height + ", ya es vertical. Sale sin recortar.");
+    }
+  }
 }
 
 $("b-girar").addEventListener("click", function(){
@@ -480,7 +504,7 @@ function pararAuto(){ if(autoRaf){ cancelAnimationFrame(autoRaf); autoRaf = null
 /* ENSAYAR SIN GRABAR. Antes el texto solo se movia mientras grababas, asi que
    no habia forma de ensayar: se quedaba quieto y parecia colgado. Un toque en
    el texto lo arranca, otro lo para. Mientras grabas manda el modo elegido. */
-$("prompter").addEventListener("click", function(){
+function ensayoConToque(){
   if(grabando || cfg.modo === "dedo") return;
   if(autoRaf){ pararAuto(); avisar("Ensayo en pausa."); return; }
   var p = $("prompter");
@@ -489,7 +513,75 @@ $("prompter").addEventListener("click", function(){
   if(p.scrollTop >= total - 2){ reiniciarGuion(); avisar("Vuelvo al principio."); return; }
   arrancarAuto();
   avisar("Ensayando. Toca el texto otra vez para parar.");
+}
+
+/* =========================================================
+   6a · SUBIR EL GUION CON EL DEDO, EN CUALQUIER MODO
+   Queja del 27-08: "sigo sin poder deslizar para arriba".
+   Antes el dedo solo servia en el modo "Con el dedo" (era el unico con
+   overflow-y:auto); en "Te sigue" y "Solo" el prompter estaba en
+   overflow:hidden y arrastrar no hacia absolutamente nada. Si la voz no
+   lo seguia, el guion quedaba clavado sin salida manual.
+   Se hace a mano con pointer events y no con el scroll del navegador
+   porque asi:
+     - funciona igual en los tres modos y tambien mientras grabas,
+     - se distingue el TOQUE (ensayar) del ARRASTRE (mover) por distancia,
+     - arrastrar corta el avance automatico en vez de pelearse con el.
+   ========================================================= */
+var UMBRAL = 8;                      /* px antes de considerarlo arrastre */
+var dedo = null, inerciaRaf = null;
+
+function pararInercia(){ if(inerciaRaf){ cancelAnimationFrame(inerciaRaf); inerciaRaf = null; } }
+
+function limitar(v){
+  var p = $("prompter");
+  var total = Math.max(0, p.scrollHeight - p.clientHeight);
+  return Math.min(total, Math.max(0, v));
+}
+
+$("prompter").addEventListener("pointerdown", function(ev){
+  pararInercia();
+  dedo = { y: ev.clientY, y0: ev.clientY, scroll0: $("prompter").scrollTop,
+           movio: false, vel: 0, t: (ev.timeStamp || 0) };
+  try{ $("prompter").setPointerCapture(ev.pointerId); }catch(e){}
 });
+
+$("prompter").addEventListener("pointermove", function(ev){
+  if(!dedo) return;
+  var dy = ev.clientY - dedo.y0;
+  if(!dedo.movio && Math.abs(dy) < UMBRAL) return;
+  if(!dedo.movio){
+    dedo.movio = true;
+    pararAuto();                     /* el dedo manda sobre el ensayo */
+  }
+  var dt = (ev.timeStamp || 0) - dedo.t;
+  if(dt > 0) dedo.vel = (dedo.y - ev.clientY) / dt;   /* px por ms, positivo = subiendo */
+  dedo.y = ev.clientY; dedo.t = (ev.timeStamp || 0);
+  $("prompter").scrollTop = limitar(dedo.scroll0 - dy);
+  ev.preventDefault();
+});
+
+function soltarDedo(ev){
+  if(!dedo) return;
+  var movio = dedo.movio, vel = dedo.vel;
+  try{ $("prompter").releasePointerCapture(ev.pointerId); }catch(e){}
+  dedo = null;
+  if(!movio){ ensayoConToque(); return; }
+  /* inercia corta, para que se sienta como el scroll del telefono */
+  if(Math.abs(vel) > 0.05){
+    var v = vel * 16;                                  /* px por cuadro */
+    var paso = function(){
+      v *= 0.94;
+      var antes = $("prompter").scrollTop;
+      $("prompter").scrollTop = limitar(antes + v);
+      if(Math.abs(v) > 0.3 && $("prompter").scrollTop !== antes){ inerciaRaf = requestAnimationFrame(paso); }
+      else inerciaRaf = null;
+    };
+    inerciaRaf = requestAnimationFrame(paso);
+  }
+}
+$("prompter").addEventListener("pointerup", soltarDedo);
+$("prompter").addEventListener("pointercancel", function(ev){ if(dedo){ dedo = null; } });
 
 /* =========================================================
    6b · recorte a vertical
@@ -945,6 +1037,19 @@ window.addEventListener("pagehide", function(){
   if(grabando) parar();          /* primero cerrar la toma, despues apagar */
   dejarDeEscuchar(); pararAuto(); soltarLienzo(); apagarCam();
 });
+
+/* LA VERSION ESCRITA, para que nunca mas tenga que adivinar si el telefono
+   abrio lo nuevo o lo viejo: sale en Ajustes, y la primera vez que arranca
+   una version nueva lo dice en pantalla. */
+(function(){
+  var e = $("version");
+  if(e) e.textContent = "Versión " + VERSION + " · si acá no dice lo mismo que te dijeron, tu teléfono abrió una versión vieja: cierra la app del todo y vuelve a abrirla.";
+  var anterior = guardado("version", null);
+  if(anterior !== VERSION){
+    guardar("version", VERSION);
+    if(anterior) avisar("Actualizada a la versión " + VERSION + ".");
+  }
+})();
 
 /* sonda para el banco de pruebas: solo lee, no toca nada */
 window.__PC_DIAG = function(){

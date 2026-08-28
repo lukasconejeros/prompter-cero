@@ -67,6 +67,7 @@ button:focus-visible{outline:2px solid var(--activo);outline-offset:2px}
   backdrop-filter:blur(3px);
   -webkit-backdrop-filter:blur(3px);
   pointer-events:auto;   /* un toque ensaya sin grabar; los botones van por encima */
+  touch-action:none;     /* el arrastre lo maneja la app: asi el dedo sube el texto en LOS TRES modos */
   z-index:2;
 }
 #app[data-pos="arriba"] #prompter{top:calc(66px + var(--top))}   /* la barra mide 60 + el borde de arriba: 58 la pisaba */
@@ -74,7 +75,8 @@ button:focus-visible{outline:2px solid var(--activo);outline-offset:2px}
 #app[data-pos="abajo"]  #prompter{bottom:118px}
 #app[data-fondo="0"] #prompter{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
 #app[data-tapa="0"] #prompter{display:none}
-#app[data-modo="dedo"] #prompter{pointer-events:auto;overflow-y:auto;-webkit-overflow-scrolling:touch}
+/* el modo "Con el dedo" ya no es especial: el arrastre funciona en los tres
+   (antes este era el unico con scroll y por eso en "Te sigue" no se movia) */
 
 #texto{
   margin:0;

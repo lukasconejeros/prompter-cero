@@ -96,3 +96,31 @@ controles de seguridad, todo verde**.
 Nadie ha corrido esto en un iPhone. Las pruebas corren en Edge con cámaras sintéticas, que reproducen
 la **lógica** (formas de cámara, memoria, caídas) pero no el comportamiento propio de WebKit. La
 confirmación del zoom y del texto pegado tiene que darla Lukas grabando una toma real.
+
+## 27-08-2026 20:30 · "sigo sin poder deslizar para arriba y se sigue viendo el zoom"
+
+Su reclamo traia tres cosas distintas mezcladas. Se separaron antes de tocar nada.
+
+1. **"¿lo subiste?" — SI estaba subido.** Se comprobo bajando `index.html`, `app.js`, `app.css` y
+   `sw.js` de https://lukasconejeros.github.io/prompter-cero/ y comparando el SHA-256 con los
+   archivos locales del commit `f3a86d3`: identicos. Lo que no habia era forma de que el TELEFONO
+   lo demostrara. **Arreglo: la app dice su version** (`VERSION` en `app.js`, se pinta en Ajustes,
+   avisa sola cuando cambia) y `test-dedo-y-version.js` falla si `sw.js` no lleva el mismo numero.
+   Leccion: una PWA sin version a la vista convierte cualquier duda en "no lo arreglaron".
+
+2. **DESLIZAR CON EL DEDO no existia fuera del modo "Con el dedo".** `#prompter` estaba en
+   `overflow:hidden` y solo `#app[data-modo="dedo"]` lo pasaba a `overflow-y:auto`. En "Te sigue"
+   (el modo por defecto) arrastrar no hacia NADA: si la voz no lo seguia, el guion quedaba clavado
+   y no habia salida manual. **Arreglo: arrastre propio con pointer events en los tres modos**,
+   umbral de 8 px para distinguir el toque (ensayar) del arrastre (mover), corta el avance
+   automatico al arrastrar e inercia corta al soltar. 12 pruebas nuevas, todas fallaban antes.
+
+3. **EL ZOOM que sigue no es el bug de las constraints — es el recorte, y es fisica.** El arreglo
+   del commit `f3a86d3` (pedir solo `height`) esta puesto y verificado. Lo que queda es otro
+   mecanismo: si la camara entrega la imagen ACOSTADA, para sacar un archivo 9:16 hay que recortar
+   los lados. `test-robustez.js` lo mide: **una camara de 1920x1080 termina en 608x1080** — de 1920
+   px de ancho se guardan 608, o sea un tercio del campo de vision. Eso ES el zoom, y ninguna
+   constraint lo arregla. **Arreglo posible hoy: decirselo con el dato y la salida** — al encender,
+   la app avisa "tu camara entrega X x Y, acostada... si lo quieres completo pon «Como venga»".
+   Falta el dato de su iPhone para saber si le pasa esto o si su camara ya entrega vertical (en ese
+   caso el zoom seria el campo reducido de la camara frontal en Safari, otro problema distinto).
