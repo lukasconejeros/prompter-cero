@@ -28,7 +28,15 @@ button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit
 button:focus-visible{outline:2px solid var(--activo);outline-offset:2px}
 
 /* ============ escenario ============ */
-#app{position:fixed;inset:0;overflow:hidden;background:#000}
+/* 🔑 EL BUG DEL 28-08 ("aprieto Guion y se bugea la app"): con overflow:hidden
+   el navegador SI puede desplazar esta capa por dentro -lo hace solo, para
+   traer a la vista el campo que recibe el cursor- pero el dedo NO, porque
+   hidden no da barras de scroll. Resultado medido: al abrir la hoja Guion la
+   app entera se iba 547 px hacia arriba y quedaba asi hasta reiniciarla.
+   `overflow:clip` recorta igual pero NO crea una zona desplazable, asi que no
+   hay nada que el navegador pueda mover. El guardian de app.js es el cinturon
+   por si el telefono es viejo y no entiende clip. */
+#app{position:fixed;inset:0;overflow:hidden;overflow:clip;background:#000}
 
 #marco{
   position:absolute;left:0;right:0;top:50%;
@@ -75,6 +83,10 @@ button:focus-visible{outline:2px solid var(--activo);outline-offset:2px}
 #app[data-pos="abajo"]  #prompter{bottom:118px}
 #app[data-fondo="0"] #prompter{background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none}
 #app[data-tapa="0"] #prompter{display:none}
+/* el ojo de la barra de abajo: esconde el guion sin salir de la grabacion.
+   Se apaga con visibility, NO con display, para que el texto conserve su
+   tamano y siga subiendo por debajo: al volver a mostrarlo esta donde debe. */
+#app[data-oculto="1"] #prompter{visibility:hidden;opacity:0;pointer-events:none}
 /* el modo "Con el dedo" ya no es especial: el arrastre funciona en los tres
    (antes este era el unico con scroll y por eso en "Te sigue" no se movia) */
 
@@ -124,22 +136,39 @@ button:focus-visible{outline:2px solid var(--activo);outline-offset:2px}
 #chip-rec i{width:9px;height:9px;border-radius:50%;background:#fff;animation:lat 1s steps(2,end) infinite}
 @keyframes lat{50%{opacity:.12}}
 @media (prefers-reduced-motion:reduce){#chip-rec i{animation:none}}
+/* en pausa el reloj se congela: el punto deja de latir y el chip cambia de
+   color, para que de un vistazo se sepa que NO esta entrando video */
+#app[data-pausa="1"] #chip-rec{background:rgba(245,184,61,.95);color:#0A0C0F}
+#app[data-pausa="1"] #chip-rec i{animation:none;background:#0A0C0F}
 
 .barra-inf{
   position:absolute;bottom:0;left:0;right:0;
-  padding:14px 22px calc(16px + var(--bot));
-  display:flex;align-items:center;justify-content:space-between;
+  padding:14px 16px calc(16px + var(--bot));
+  display:flex;align-items:center;justify-content:space-between;gap:6px;
   background:linear-gradient(0deg,rgba(0,0,0,.72),transparent);
 }
 .redondo{
-  width:52px;height:52px;border-radius:50%;
+  width:48px;height:48px;border-radius:50%;
   background:rgba(20,24,29,.82);
   border:1px solid rgba(255,255,255,.14);
   display:flex;align-items:center;justify-content:center;
-  font-size:21px;
+  font-size:20px;flex:0 0 auto;
 }
 .redondo:active{background:rgba(40,46,54,.92)}
 .redondo[disabled]{opacity:.3}
+.redondo .ico{width:23px;height:23px;fill:currentColor;display:block}
+
+/* ojo: tachado cuando el guion esta escondido */
+#b-tapar .ico-tapado{display:none}
+#app[data-oculto="1"] #b-tapar .ico-ver{display:none}
+#app[data-oculto="1"] #b-tapar .ico-tapado{display:block}
+#app[data-oculto="1"] #b-tapar{background:rgba(255,255,255,.9);color:#0A0C0F;border-color:#fff}
+
+/* pausa: se enciende solo mientras grabas, y pasa a «seguir» al pausar */
+#b-pausa .ico-seguir{display:none}
+#app[data-pausa="1"] #b-pausa .ico-pausa{display:none}
+#app[data-pausa="1"] #b-pausa .ico-seguir{display:block}
+#app[data-pausa="1"] #b-pausa{background:rgba(245,184,61,.95);color:#0A0C0F;border-color:var(--warn)}
 
 #b-rec{
   width:76px;height:76px;border-radius:50%;
@@ -178,10 +207,15 @@ button:focus-visible{outline:2px solid var(--activo);outline-offset:2px}
 #cuenta[data-on="1"]{display:flex}
 
 /* ============ hojas ============ */
+/* --teclado lo escribe app.js con lo que el teclado del telefono le come a la
+   pantalla. Sin esto la hoja seguia midiendo el 88% de la pantalla ENTERA y su
+   mitad de abajo -«Mis guiones», los botones- quedaba debajo del teclado, sin
+   forma de llegar deslizando porque el contenido ya cabia. */
 .hoja{
-  position:absolute;left:0;right:0;bottom:0;
+  position:absolute;left:0;right:0;bottom:var(--teclado,0px);
   z-index:8;
-  max-height:88%;
+  max-height:calc(88% - var(--teclado,0px));
+  overscroll-behavior:contain;
   background:var(--panel);
   border-top:1px solid var(--line);
   border-radius:20px 20px 0 0;

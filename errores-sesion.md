@@ -124,3 +124,51 @@ Su reclamo traia tres cosas distintas mezcladas. Se separaron antes de tocar nad
    la app avisa "tu camara entrega X x Y, acostada... si lo quieres completo pon «Como venga»".
    Falta el dato de su iPhone para saber si le pasa esto o si su camara ya entrega vertical (en ese
    caso el zoom seria el campo reducido de la camara frontal en Safari, otro problema distinto).
+
+## 28-08-2026 · "aprieto Guion y se bugea la app": el focus() que descuadraba TODO
+
+Su reclamo: *"cuando estoy en guiones aprieto guiones se bugea la app y no me deja deslizar para
+arriba ni para abajo, la parte de guiones esta totalmente bugeada"*.
+
+**Reproducido antes de tocar nada** (Edge + playwright, iPhone 390x844): al tocar «Guion»,
+`#app.scrollTop` saltaba de 0 a **547 px** y ahi se quedaba. La barra de arriba se iba a y=-537, el
+prompter a y=-481 y la hoja a y=-446: la app entera fuera de cuadro. Deslizar con el dedo no la
+devolvia, y **cerrar la hoja tampoco**: quedaba rota hasta reiniciar la app.
+
+**Causa raiz, en dos piezas que solas no hacen dano:**
+
+1. `$("b-guion")` hacia `abrir("hoja-guion")` **y ademas `$("ta").focus()`**. El cuadro de texto
+   estaba entrando en pantalla (la hoja se anima 260 ms), asi que el navegador lo "trajo a la
+   vista" desplazando el ancestro desplazable mas cercano.
+2. Ese ancestro era `#app`, que es `overflow:hidden`. 🔑 **`overflow:hidden` NO impide el scroll:
+   impide las BARRAS.** El navegador puede desplazar esa capa por dentro; el dedo no. Y las hojas
+   cerradas viven en `translateY(102%)`, o sea `#app` tenia 1602 px de area desplazable esperando.
+
+**Arreglos (los tres, porque cada uno tapa un agujero distinto):**
+- Fuera el `focus()` automatico. De paso, el teclado ya no tapa «Mis guiones», que es lo que el va
+  a buscar cuando abre esa hoja.
+- `#app` pasa a `overflow:clip`: recorta igual pero **no crea zona desplazable**, asi no hay nada
+  que el navegador pueda mover.
+- Guardian en `app.js` (`fijarEncuadre`): cualquier scroll de `#app`, `body` o el documento vuelve
+  a 0. Es el cinturon por si un telefono viejo no entiende `clip`.
+- Y las hojas ahora respetan el teclado (`--teclado` medido con `visualViewport`): antes la hoja
+  media el 88% de la pantalla ENTERA y su mitad de abajo quedaba debajo del teclado **sin forma de
+  llegar deslizando**, porque para el navegador el contenido ya cabia.
+
+**Leccion reutilizable**: enfocar un campo que todavia no esta a la vista es un desplazamiento
+disfrazado. En una app a pantalla completa, ningun contenedor de layout deberia poder desplazarse:
+`overflow:clip` + guardian, y el `focus()` automatico solo cuando el campo ya esta quieto y visible.
+
+## 28-08-2026 · pausar la toma y esconder el guion (encargos del mismo mensaje)
+
+- **Pausa**: antes solo existia parar, o sea partir la grabacion en varios archivos. Ahora
+  `MediaRecorder.pause()/resume()` mantiene **un solo video**; el reloj descuenta el rato parado
+  (`segundosGrabados()`) y el guion se congela con la pausa (si no, mientras acomodas la luz el
+  texto se te sigue yendo). Si el telefono no sabe pausar, lo dice en vez de quedarse mudo.
+- **El ojo**: esconde el guion sin salir de la pantalla de grabar (antes habia que entrar a Ajustes
+  y bajar «Cuanto tapa» a 0 en medio de una toma). Se apaga con `visibility`, **no** con
+  `display:none`, para que el texto conserve su tamano y siga subiendo por debajo: al traerlo de
+  vuelta esta donde debe.
+
+**127 pruebas verdes**: 44 nuevas (`test-hoja-pausa-y-ojo.js`) + 20 robustez + 17 seguimiento +
+11 guiones + 14 dedo/version + 21 controles de seguridad.

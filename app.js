@@ -6,7 +6,7 @@
    Ahora la app la dice en Ajustes y avisa sola cuando se actualiza.
    Al cambiarla hay que cambiar tambien el cache de sw.js: la prueba
    test-dedo-y-version.js falla si no coinciden. */
-var VERSION = "v6";
+var VERSION = "v7";
 window.__PC_VERSION = VERSION;
 
 /* =========================================================
@@ -253,18 +253,57 @@ function abrir(id){
   cerrarTodo();
   $(id).setAttribute("data-abierta","1");
   $("velo").setAttribute("data-on","1");
+  fijarEncuadre();
 }
 function cerrarTodo(){
   var hs = document.querySelectorAll(".hoja");
   for(var i=0;i<hs.length;i++){ hs[i].removeAttribute("data-abierta"); }
   $("velo").removeAttribute("data-on");
+  fijarEncuadre();
 }
 $("velo").addEventListener("click", cerrarTodo);
 document.addEventListener("click", function(ev){
   if(ev.target.classList && ev.target.classList.contains("asa")) cerrarTodo();
 });
-$("b-guion").addEventListener("click", function(){ abrir("hoja-guion"); $("ta").focus(); });
+/* 🔑 28-08: acá había un `$("ta").focus()`. Parecía una comodidad -abrir la
+   hoja con el cursor puesto- y era EL bug: el navegador, para traer a la vista
+   un campo que todavía venía entrando en pantalla, empujaba #app 547 px hacia
+   arriba; como #app no se puede deslizar con el dedo, la app quedaba torcida
+   hasta reiniciarla. Y de paso el teclado tapaba «Mis guiones», que es lo que
+   él viene a buscar. Ahora el cursor lo pone él tocando el cuadro. */
+$("b-guion").addEventListener("click", function(){ abrir("hoja-guion"); });
 $("b-ajustes").addEventListener("click", function(){ abrir("hoja-ajustes"); });
+
+/* =========================================================
+   3a · EL ENCUADRE NO SE MUEVE, y las hojas esquivan el teclado
+   ========================================================= */
+function fijarEncuadre(){
+  if(app.scrollTop || app.scrollLeft){ app.scrollTop = 0; app.scrollLeft = 0; }
+  var d = document.scrollingElement;
+  if(d && (d.scrollTop || d.scrollLeft)){ d.scrollTop = 0; d.scrollLeft = 0; }
+  if(window.scrollY || window.scrollX){ try{ window.scrollTo(0,0); }catch(e){} }
+}
+/* los eventos de scroll no burbujean: se escuchan en captura */
+document.addEventListener("scroll", function(ev){
+  var t = ev.target;
+  if(t === app || t === document || t === document.body || t === document.documentElement) fijarEncuadre();
+}, true);
+document.addEventListener("focusin", function(){ setTimeout(fijarEncuadre, 0); });
+
+/* cuánto de la pantalla se come el teclado, para que la hoja abierta se suba
+   encima y se pueda seguir deslizando hasta el final */
+function medirTeclado(){
+  var vv = window.visualViewport;
+  var tapa = vv ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
+  if(tapa < 60) tapa = 0;                       /* la barra del navegador no es teclado */
+  document.documentElement.style.setProperty("--teclado", tapa + "px");
+  fijarEncuadre();
+}
+if(window.visualViewport){
+  window.visualViewport.addEventListener("resize", medirTeclado);
+  window.visualViewport.addEventListener("scroll", medirTeclado);
+}
+medirTeclado();
 
 /* =========================================================
    4 · la cámara
@@ -672,6 +711,13 @@ function soltarLienzo(){
    ========================================================= */
 var grabador = null, trozos = [], grabando = false, t0 = 0, relojInt = null, blobFinal = null, wake = null;
 var pesado = 0, pesados = false;
+var pausado = false, pausaT0 = 0, pausadoTotal = 0;
+
+/* los segundos que de verdad entraron al video: el rato en pausa no cuenta */
+function segundosGrabados(){
+  var extra = pausado ? (Date.now() - pausaT0) : 0;
+  return Math.max(0, (Date.now() - t0 - pausadoTotal - extra) / 1000);
+}
 
 function mimeBueno(){
   var c = ["video/mp4;codecs=avc1.640028,mp4a.40.2","video/mp4;codecs=avc1","video/mp4",
@@ -798,26 +844,100 @@ function arrancar(){
   pesado = 0;
   grabando = true;
   t0 = Date.now();
+  pausado = false; pausaT0 = 0; pausadoTotal = 0;
   app.setAttribute("data-rec","1");
+  app.setAttribute("data-pausa","0");
+  $("b-pausa").disabled = false;
+  $("b-pausa").setAttribute("aria-label","Pausar la grabación");
   pedirWakeLock();
 
   if(cfg.modo === "voz") escuchar();
   else if(cfg.modo === "auto") arrancarAuto();
 
   relojInt = setInterval(function(){
-    var s = Math.floor((Date.now() - t0) / 1000);
+    var s = Math.floor(segundosGrabados());
     $("rec-time").textContent = Math.floor(s/60) + ":" + ("0" + (s%60)).slice(-2);
   }, 250);
 }
 
+/* =========================================================
+   7a · PAUSAR LA TOMA (encargo del 28-08)
+   No corta el video: `MediaRecorder.pause()` deja de meter fotogramas y al
+   seguir continúa en el MISMO archivo. Antes solo existía parar, o sea partir
+   la grabación en varios videos y tener que pegarlos después.
+   El guion se congela con ella: si no, mientras acomodas la luz el texto se
+   te sigue yendo y vuelves a grabar desde otra parte.
+   ========================================================= */
+function puedePausar(){
+  return !!(grabador && typeof grabador.pause === "function" && typeof grabador.resume === "function");
+}
+
+function pausarToma(){
+  if(!grabando || pausado) return;
+  if(!puedePausar()){ avisar("Este teléfono no sabe pausar. Puedes parar y grabar otra toma.", true); return; }
+  try{ grabador.pause(); }
+  catch(e){ avisar("No se pudo pausar: " + (e.name || e.message), true); return; }
+  pausado = true;
+  pausaT0 = Date.now();
+  app.setAttribute("data-pausa","1");
+  $("b-pausa").setAttribute("aria-label","Seguir grabando");
+  dejarDeEscuchar();
+  pararAuto();
+  avisar("En pausa. Toca otra vez para seguir en el mismo video.");
+}
+
+function seguirToma(){
+  if(!grabando || !pausado) return;
+  try{ grabador.resume(); }
+  catch(e){ avisar("No se pudo seguir: " + (e.name || e.message), true); return; }
+  pausadoTotal += Date.now() - pausaT0;
+  pausado = false; pausaT0 = 0;
+  app.setAttribute("data-pausa","0");
+  $("b-pausa").setAttribute("aria-label","Pausar la grabación");
+  if(cfg.modo === "voz") escuchar();
+  else if(cfg.modo === "auto") arrancarAuto();
+  avisar("Seguimos.");
+}
+
+$("b-pausa").addEventListener("click", function(){
+  if(!grabando){ avisar("Primero empieza a grabar."); return; }
+  if(pausado) seguirToma(); else pausarToma();
+});
+
+/* =========================================================
+   7b · ESCONDER EL GUION SIN SALIR DE LA GRABACIÓN (encargo del 28-08)
+   Antes había que entrar a Ajustes y bajar «Cuánto tapa la pantalla» a 0,
+   o sea salir de la pantalla de grabar en medio de una toma.
+   ========================================================= */
+function verGuion(ocultar){
+  app.setAttribute("data-oculto", ocultar ? "1" : "0");
+  $("b-tapar").setAttribute("aria-pressed", ocultar ? "true" : "false");
+  $("b-tapar").setAttribute("aria-label", ocultar ? "Mostrar el guion" : "Ocultar el guion");
+}
+$("b-tapar").addEventListener("click", function(){
+  var oculto = app.getAttribute("data-oculto") === "1";
+  if(!oculto && cfg.tapa === 0){
+    avisar("El guion ya está en 0 % en Ajustes: súbelo ahí para verlo.");
+    return;
+  }
+  verGuion(!oculto);
+  avisar(oculto ? "Guion a la vista." : "Guion escondido. Toca el ojo para traerlo de vuelta.");
+});
+
 function parar(){
   if(!grabando) return;
   grabando = false;
+  /* si venía en pausa hay que cerrar la cuenta antes de soltar el estado, o la
+     duración del video saldría con el rato parado metido dentro */
+  if(pausado){ pausadoTotal += Date.now() - pausaT0; pausado = false; pausaT0 = 0; }
   if(relojInt){ clearInterval(relojInt); relojInt = null; }
   dejarDeEscuchar();
   pararAuto();
   soltarWakeLock();
   app.setAttribute("data-rec","0");
+  app.setAttribute("data-pausa","0");
+  $("b-pausa").disabled = true;
+  $("b-pausa").setAttribute("aria-label","Pausar la grabación");
   $("rec-time").textContent = "0:00";
   try{ grabador.stop(); }catch(e){}
   /* red de seguridad: si el grabador murio y nunca avisa que se detuvo, el
@@ -840,7 +960,7 @@ function cerrarToma(){
   $("rev-datos").textContent = (blobFinal.size / 1048576).toFixed(1).replace(".", ",") + " MB · cargando…";
   $("rev").onloadedmetadata = function(){
     var v = $("rev");
-    var seg = (isFinite(v.duration) && v.duration) ? v.duration : (Date.now() - t0) / 1000;
+    var seg = (isFinite(v.duration) && v.duration) ? v.duration : segundosGrabados();
     $("rev-datos").textContent = (v.videoWidth || "?") + " × " + (v.videoHeight || "?")
       + " · " + (blobFinal.size / 1048576).toFixed(1).replace(".", ",") + " MB · "
       + seg.toFixed(1).replace(".", ",") + " s";
@@ -939,7 +1059,7 @@ $("s-letra").addEventListener("input", function(){
 });
 $("s-vel").addEventListener("input", function(){
   cfg.vel = parseInt(this.value,10); guardar("vel", cfg.vel); aplicarCfg();
-  if(grabando && cfg.modo === "auto") arrancarAuto();
+  if(grabando && !pausado && cfg.modo === "auto") arrancarAuto();
 });
 
 $("b-encender").addEventListener("click", function(){
@@ -953,6 +1073,7 @@ conectarSeg("g-fondo","fondo");
 conectarSeg("g-modo","modo", function(){
   if(!grabando) return;
   dejarDeEscuchar(); pararAuto();
+  if(pausado) return;                 /* en pausa el guion NO se mueve, pase lo que pase */
   if(cfg.modo === "voz") escuchar();
   else if(cfg.modo === "auto") arrancarAuto();
 });
@@ -1056,6 +1177,9 @@ window.__PC_DIAG = function(){
   return {
     grabando: grabando, trozos: trozos.length, puntero: puntero,
     escuchando: escuchando, auto: !!autoRaf, pintando: !!pintarRaf,
+    pausado: pausado, estadoGrabador: grabador ? grabador.state : "-",
+    oculto: app.getAttribute("data-oculto") === "1",
+    appScrollTop: app.scrollTop,
     urlRevision: !!urlRevision, salida: medidasSalida()
   };
 };

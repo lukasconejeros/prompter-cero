@@ -3,7 +3,7 @@
    El cache es solo la red de seguridad para cuando no hay senal.
    Asi nunca te queda pegada una version vieja en el telefono. */
 
-var CACHE = "prompter-cero-v6";
+var CACHE = "prompter-cero-v7";
 var ESENCIALES = [
   "./",
   "./index.html",
