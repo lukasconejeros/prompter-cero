@@ -6,7 +6,7 @@
    Ahora la app la dice en Ajustes y avisa sola cuando se actualiza.
    Al cambiarla hay que cambiar tambien el cache de sw.js: la prueba
    test-dedo-y-version.js falla si no coinciden. */
-var VERSION = "v7";
+var VERSION = "v8";
 window.__PC_VERSION = VERSION;
 
 /* =========================================================
@@ -707,6 +707,132 @@ function soltarLienzo(){
 }
 
 /* =========================================================
+   6c · EL VIDEO SE ESCRIBE EN EL TELÉFONO MIENTRAS GRABAS
+   28-08-2026: perdió una toma de 819,8 MB. El video vivía entero en la
+   memoria de la página hasta que lo guardabas; a ese tamaño Safari no pudo
+   ni mostrarlo ni sacarlo («Error de WebKitBlobResource 1»), y sin copia en
+   disco no había nada que rescatar. Ahora cada trozo va al almacenamiento
+   del teléfono según sale, y la toma sobrevive aunque la app se recargue.
+   ========================================================= */
+var obrero = null, discoEnUso = false, discoNombre = "", discoMime = "", discoBytes = 0;
+var cola = Promise.resolve(), discoRoto = false;
+
+function hayDisco(){
+  return !!(window.Worker && navigator.storage && navigator.storage.getDirectory);
+}
+
+function pendientes(){ var p = guardado("pendientes", []); return (p && p.length) ? p : []; }
+
+/* abre el archivo de esta toma; devuelve si se pudo o no */
+function abrirDisco(ext, mime){
+  discoBytes = 0; discoEnUso = false; discoRoto = false;
+  if(!hayDisco()) return Promise.resolve(false);
+  if(!obrero){
+    try{ obrero = new Worker("grabador-disco.js"); }
+    catch(e){ return Promise.resolve(false); }
+    obrero.addEventListener("message", function(ev){
+      var m = ev.data || {};
+      if(m.tipo === "escrito"){ discoBytes = m.bytes; return; }
+      if(m.tipo === "no-cabe"){
+        discoBytes = m.bytes; discoRoto = true;
+        avisar("No cabe más video en el teléfono. Paré la toma y guardé lo que alcanzó a entrar.", true);
+        parar();
+      }
+    });
+  }
+  discoNombre = "toma-" + Math.floor((Date.now() - 1750000000000) / 1000) + "." + ext;
+  discoMime = mime || "video/mp4";
+  return new Promise(function(res){
+    var alListo = function(ev){
+      var m = ev.data || {};
+      if(m.tipo !== "listo" && m.tipo !== "sin-disco") return;
+      obrero.removeEventListener("message", alListo);
+      discoEnUso = (m.tipo === "listo");
+      res(discoEnUso);
+    };
+    obrero.addEventListener("message", alListo);
+    obrero.postMessage({ tipo: "abrir", nombre: discoNombre });
+  });
+}
+
+function escribirEnDisco(trozo){
+  cola = cola.then(function(){ return trozo.arrayBuffer(); }).then(function(buf){
+    obrero.postMessage({ tipo: "trozo", datos: buf }, [buf]);
+  }).catch(function(){});
+}
+
+/* cierra el archivo y lo devuelve como un File que vive en el DISCO, no en la
+   memoria: es lo que después se manda a Fotos */
+function cerrarDisco(){
+  if(!discoEnUso || !obrero) return Promise.resolve(null);
+  return cola.then(function(){
+    return new Promise(function(res){
+      var alCerrar = function(ev){
+        if((ev.data || {}).tipo !== "cerrado") return;
+        obrero.removeEventListener("message", alCerrar);
+        res(ev.data.bytes || 0);
+      };
+      obrero.addEventListener("message", alCerrar);
+      obrero.postMessage({ tipo: "cerrar" });
+    });
+  }).then(function(){
+    return navigator.storage.getDirectory();
+  }).then(function(raiz){
+    return raiz.getFileHandle(discoNombre);
+  }).then(function(h){
+    return h.getFile();
+  }).then(function(f){
+    if(f && !f.type && discoMime){
+      try{ return new File([f], discoNombre, { type: discoMime }); }catch(e){}
+    }
+    return f;
+  });
+}
+
+function anotarPendiente(nombre, mime, bytes){
+  var p = pendientes();
+  p = p.filter(function(x){ return x.nombre !== nombre; });
+  p.push({ nombre: nombre, mime: mime, bytes: bytes });
+  if(p.length > 12) p = p.slice(-12);
+  guardar("pendientes", p);
+}
+
+function olvidarPendiente(nombre){
+  guardar("pendientes", pendientes().filter(function(x){ return x.nombre !== nombre; }));
+}
+
+function borrarDelTelefono(nombre){
+  if(!hayDisco()) return Promise.resolve(false);
+  return navigator.storage.getDirectory()
+    .then(function(raiz){ return raiz.removeEntry(nombre); })
+    .then(function(){ olvidarPendiente(nombre); return true; })
+    .catch(function(){ olvidarPendiente(nombre); return false; });
+}
+
+/* al abrir la app: si quedó una toma sin pasar a Fotos, se rescata */
+function rescatarPendiente(){
+  var p = pendientes();
+  if(!p.length || !hayDisco()) return;
+  var ultima = p[p.length - 1];
+  navigator.storage.getDirectory()
+    .then(function(raiz){ return raiz.getFileHandle(ultima.nombre); })
+    .then(function(h){ return h.getFile(); })
+    .then(function(f){
+      if(!f || !f.size){ olvidarPendiente(ultima.nombre); return; }
+      if(f.type || !ultima.mime){ discoNombre = ultima.nombre; }
+      else { try{ f = new File([f], ultima.nombre, { type: ultima.mime }); }catch(e){} }
+      discoNombre = ultima.nombre;
+      blobFinal = f;
+      $("b-ultimo").disabled = false;
+      /* con calma: al abrir, la cámara avisa lo suyo y le pisaría este aviso */
+      setTimeout(function(){
+        avisar("Tienes una toma de " + (f.size/1048576).toFixed(0) + " MB guardada en el teléfono sin pasar a Fotos. Toca ▶ para sacarla.", true);
+      }, 3500);
+    })
+    .catch(function(){ olvidarPendiente(ultima.nombre); });
+}
+
+/* =========================================================
    7 · grabar
    ========================================================= */
 var grabador = null, trozos = [], grabando = false, t0 = 0, relojInt = null, blobFinal = null, wake = null;
@@ -821,13 +947,16 @@ function arrancar(){
 
   grabador.ondataavailable = function(ev){
     if(!ev.data || !ev.data.size) return;
-    trozos.push(ev.data);
     pesado += ev.data.size;
-    /* el video vive en la memoria del telefono hasta que lo guardas: pasados
-       ~350 MB Safari empieza a ahogarse, y avisar es mejor que morir */
-    if(!pesados && pesado > 350 * 1048576){
+    /* al disco si se pudo abrir; a la memoria solo el primer segundo, mientras
+       el archivo se abre, o si este teléfono no sabe guardar en disco */
+    if(discoEnUso && !discoRoto) escribirEnDisco(ev.data);
+    else trozos.push(ev.data);
+    if(!pesados && pesado > (discoEnUso ? 400 : 350) * 1048576){
       pesados = true;
-      avisar("La toma ya pesa 350 MB. Párala y guárdala antes de que el teléfono se atore.", true);
+      avisar(discoEnUso
+        ? "La toma ya pesa 400 MB. Está a salvo en el teléfono, pero a este tamaño cuesta pasarla a Fotos: mejor párala y sigue en otra toma."
+        : "La toma ya pesa 350 MB y este teléfono la tiene en memoria. Párala y guárdala antes de que se atore.", true);
     }
   };
   grabador.onstop = cerrarToma;
@@ -839,6 +968,20 @@ function arrancar(){
     avisar("La grabación se cortó sola. Guardé lo que alcanzó a grabar.", true);
     parar();
   };
+
+  /* el archivo del teléfono se abre en paralelo: lo que llegue antes de que
+     esté listo se guarda un segundo en memoria y después se vuelca */
+  var ext = ((grabador.mimeType || m || "").indexOf("webm") > -1) ? "webm" : "mp4";
+  var mimeArchivo = (grabador.mimeType || m || "video/mp4").split(";")[0];
+  cola = Promise.resolve();
+  abrirDisco(ext, mimeArchivo).then(function(sePudo){
+    if(!sePudo){
+      avisar("Este teléfono no puede ir guardando mientras grabas: no hagas tomas muy largas.", true);
+      return;
+    }
+    var previos = trozos; trozos = [];
+    for(var i = 0; i < previos.length; i++) escribirEnDisco(previos[i]);
+  });
 
   grabador.start(1000);
   pesado = 0;
@@ -854,9 +997,13 @@ function arrancar(){
   if(cfg.modo === "voz") escuchar();
   else if(cfg.modo === "auto") arrancarAuto();
 
+  /* el reloj lleva los MB al lado: el 28-08 se le fue una toma a 819,8 MB sin
+     que nada se lo dijera hasta que ya no se podía guardar */
   relojInt = setInterval(function(){
     var s = Math.floor(segundosGrabados());
-    $("rec-time").textContent = Math.floor(s/60) + ":" + ("0" + (s%60)).slice(-2);
+    var mb = Math.round((discoEnUso ? discoBytes : pesado) / 1048576);
+    $("rec-time").textContent = Math.floor(s/60) + ":" + ("0" + (s%60)).slice(-2)
+      + (mb >= 20 ? " · " + mb + " MB" : "");
   }, 250);
 }
 
@@ -945,17 +1092,61 @@ function parar(){
   setTimeout(function(){ if(!grabando) soltarLienzo(); }, 2500);
 }
 
+/* por encima de esto no se carga el video en el visor: el 28-08 uno de 819,8 MB
+   dejó el recuadro en negro y de paso reventó el guardado */
+var TOPE_VISOR = guardado("topeVisor", 250);   /* las pruebas lo bajan para no grabar 250 MB */
+
 function cerrarToma(){
   soltarLienzo();
   var tipo = (grabador && grabador.mimeType) ? grabador.mimeType.split(";")[0] : "video/mp4";
-  blobFinal = new Blob(trozos, { type: tipo });
-  trozos = [];                       /* los pedazos ya estan dentro del blob: sobran */
-  if(!blobFinal.size){ avisar("No quedó nada grabado. Prueba de nuevo.", true); return; }
 
+  if(discoEnUso){
+    cerrarDisco().then(function(f){
+      discoEnUso = false;
+      if(!f || !f.size){ avisar("No quedó nada grabado. Prueba de nuevo.", true); return; }
+      anotarPendiente(discoNombre, tipo, f.size);
+      mostrarToma(f);
+    }).catch(function(e){
+      discoEnUso = false;
+      avisar("No se pudo cerrar el video: " + (e && (e.name || e.message) || "error"), true);
+    });
+    return;
+  }
+
+  var b = new Blob(trozos, { type: tipo });
+  trozos = [];                       /* los pedazos ya estan dentro del blob: sobran */
+  if(!b.size){ avisar("No quedó nada grabado. Prueba de nuevo.", true); return; }
+  mostrarToma(b);
+}
+
+function mostrarToma(archivo){
+  blobFinal = archivo;
   soltarRevision();                  /* la toma anterior se suelta ANTES de cargar esta */
+  $("b-ultimo").disabled = false;
+  $("b-borrar-toma").hidden = true;
+  $("nota-disco").textContent = discoEnUso || pendientes().length
+    ? "Esta toma está guardada en tu teléfono: aunque se cierre la app, no se pierde."
+    : "Mientras grabas, el video se va guardando en tu teléfono: si la app se cierra, la toma no se pierde.";
+  var mb = archivo.size / 1048576;
+  var peso = mb.toFixed(1).replace(".", ",") + " MB";
+
+  if(mb > TOPE_VISOR){
+    /* ni se intenta: a este tamaño el visor se lleva puesto al teléfono */
+    $("rev").removeAttribute("src");
+    $("b-ver-igual").hidden = false;
+    $("rev-datos").textContent = peso + " · pesa demasiado para verlo acá; guárdalo directo en Fotos";
+    abrir("hoja-video");
+    return;
+  }
+  $("b-ver-igual").hidden = true;
+  verLaToma();
+}
+
+function verLaToma(){
+  if(!blobFinal) return;
+  $("b-ver-igual").hidden = true;
   urlRevision = URL.createObjectURL(blobFinal);
   $("rev").src = urlRevision;
-  $("b-ultimo").disabled = false;
 
   $("rev-datos").textContent = (blobFinal.size / 1048576).toFixed(1).replace(".", ",") + " MB · cargando…";
   $("rev").onloadedmetadata = function(){
@@ -1025,7 +1216,7 @@ $("b-fotos").addEventListener("click", function(){
 
   if(archivo && navigator.canShare && navigator.canShare({ files: [archivo] })){
     navigator.share({ files: [archivo] })
-      .then(function(){ avisar("Listo, revisa tu carrete."); })
+      .then(function(){ guardadaBien(); })
       .catch(function(e){
         if(e && e.name === "AbortError") return;
         bajarDirecto(nombre);
@@ -1033,6 +1224,27 @@ $("b-fotos").addEventListener("click", function(){
     return;
   }
   bajarDirecto(nombre);
+});
+
+/* la toma ya esta en Fotos: recien ahi se puede soltar la copia del telefono,
+   y aun asi la borra el, no la app -es su video- */
+function guardadaBien(){
+  avisar("Listo, revisa tu carrete.");
+  if(discoNombre && pendientes().some(function(x){ return x.nombre === discoNombre; })){
+    $("b-borrar-toma").hidden = false;
+    $("nota-disco").textContent = "La copia sigue guardada en tu teléfono por si acaso. Si ya la viste en Fotos, puedes borrarla acá abajo.";
+  }
+}
+
+$("b-ver-igual").addEventListener("click", function(){ verLaToma(); });
+
+$("b-borrar-toma").addEventListener("click", function(){
+  var n = discoNombre;
+  if(!n) return;
+  borrarDelTelefono(n).then(function(ok){
+    $("b-borrar-toma").hidden = true;
+    avisar(ok ? "Borrada del teléfono." : "Ya no estaba en el teléfono.");
+  });
 });
 
 function bajarDirecto(nombre){
@@ -1131,6 +1343,10 @@ contarTa();
 
 encender().catch(function(){});
 
+/* si el teléfono nos deja, que no borre solo lo grabado por falta de espacio */
+if(navigator.storage && navigator.storage.persist){ try{ navigator.storage.persist(); }catch(e){} }
+rescatarPendiente();
+
 document.addEventListener("visibilitychange", function(){
   if(document.hidden){
     if(grabando) parar();
@@ -1178,6 +1394,9 @@ window.__PC_DIAG = function(){
     grabando: grabando, trozos: trozos.length, puntero: puntero,
     escuchando: escuchando, auto: !!autoRaf, pintando: !!pintarRaf,
     pausado: pausado, estadoGrabador: grabador ? grabador.state : "-",
+    enDisco: discoEnUso, discoNombre: discoNombre, discoBytes: discoBytes,
+    pendientes: pendientes().length, topeVisor: TOPE_VISOR,
+    pesaMB: blobFinal ? Math.round(blobFinal.size / 1048576 * 10) / 10 : 0,
     oculto: app.getAttribute("data-oculto") === "1",
     appScrollTop: app.scrollTop,
     urlRevision: !!urlRevision, salida: medidasSalida()

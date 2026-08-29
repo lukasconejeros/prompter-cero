@@ -172,3 +172,35 @@ disfrazado. En una app a pantalla completa, ningun contenedor de layout deberia 
 
 **127 pruebas verdes**: 44 nuevas (`test-hoja-pausa-y-ojo.js`) + 20 robustez + 17 seguimiento +
 11 guiones + 14 dedo/version + 21 controles de seguridad.
+
+## 28-08-2026 20:30 · 🔴 PERDIO UN VIDEO DE 819,8 MB: el video vivia en la memoria
+
+Grabo con la v7, toco «Guardar en Fotos» y le salio *"el telefono no pudo abrirlo aqui"* y despues
+Safari con **"Error de WebKitBlobResource 1"**. Su pregunta: *"¿perdi el video acaso?"*. **Si.**
+
+**Causa, y era de diseno, no un descuido:** `MediaRecorder` iba dejando los trozos en un array
+(`trozos`) y al parar se armaba un `Blob` **en la memoria de la pagina**. A 819,8 MB:
+- el `<video>` del visor no pudo abrirlo (de ahi el recuadro negro),
+- `bajarDirecto()` creo una URL `blob:` que WebKit no pudo materializar ⇒ WebKitBlobResource 1,
+- y como **no habia ninguna copia en disco**, cerrar la app se llevo el video entero.
+
+El aviso de los 350 MB existia desde el 27-08 pero solo dura 7 s y no frena nada: no lo vio.
+
+**Arreglo (`grabador-disco.js` + app.js):**
+1. **Cada trozo se escribe en el telefono segun sale**, en OPFS, con `createSyncAccessHandle` dentro
+   de un Worker (esa API solo existe en workers, por eso el archivo aparte). La memoria deja de
+   crecer: al parar, el `File` sale del disco, no de la RAM.
+2. **Rescate**: la toma queda anotada en `pc.pendientes`; si la app se recarga o se cierra, al abrir
+   avisa *"tienes una toma de N MB sin pasar a Fotos"* y el boton ▶ la abre. **Antes esto se perdia.**
+3. **El visor ya no se suicida**: por encima de `TOPE_VISOR` (250 MB) no carga el video, lo dice y
+   deja un boton «verlo acá igual» por si insiste.
+4. **Los MB se ven mientras grabas**, al lado del reloj, y a los 400 MB avisa que a ese tamano
+   cuesta pasarlo a Fotos aunque este a salvo.
+5. La copia del telefono **la borra el**, con boton, despues de guardarla en Fotos. La app no borra
+   videos sola.
+
+⚠️ **Lo que esto NO arregla**: un archivo de 800 MB puede seguir siendo indigerible para
+`navigator.share` en iOS. La diferencia es que ahora **no se pierde**: se puede reintentar. Para
+tomas largas, bajar la calidad en Ajustes (4K ≈ 180 MB/min, 1080p ≈ 120, 720p ≈ 67).
+
+**149 pruebas verdes**: 22 nuevas (`test-guardar-en-disco.js`) + 44 + 20 + 14 + 11 + 17 + 21.
