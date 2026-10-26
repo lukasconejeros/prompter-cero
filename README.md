@@ -41,13 +41,19 @@ toma la señal de la cámara directo. Por eso no se quema en el video y no cuest
 ## Las pruebas
 
 Corren con el Edge que ya está en el PC (no descargan navegadores) y con `playwright-core` de
-`whatsapp-mary`. Antes de decir que algo funciona, se corren las cuatro:
+`whatsapp-mary`. Antes de decir que algo funciona, se corren todas:
 
 ```
+node test-microfono-y-velocidad.js  # 36 · micrófono revisado en cada toma, velocidad a mano, registro
 node test-robustez.js        # 20 · las fallas que sufrió en el iPhone: memoria, zoom, texto pegado
-node test-seguimiento.js     # 17 · el algoritmo del seguimiento por voz, sin navegador
 node test-guiones.js         # 11 · los 3 guiones vienen dentro de la app y se abren
+node test-dedo-y-version.js  # 13 · el dedo sube el guion y la app dice su versión
+node test-hoja-pausa-y-ojo.js  # 44 · la hoja Guion, la pausa y el ojo
+node test-guardar-en-disco.js  # 22 · el video se escribe en el teléfono mientras grabas
 node auditoria-seguridad.js  # 21 controles de privacidad (con --vivo, contra el servidor real)
 ```
+
+El seguimiento por voz se sacó el 26-10-2026 (no funcionaba bien y le peleaba el micrófono a la
+grabación): el texto sube solo y la velocidad se cambia con − y + en la pantalla de grabar.
 
 Los errores ya cazados y cómo se arreglaron están en `errores-sesion.md`. Se lee antes de improvisar.

@@ -204,3 +204,44 @@ El aviso de los 350 MB existia desde el 27-08 pero solo dura 7 s y no frena nada
 tomas largas, bajar la calidad en Ajustes (4K ≈ 180 MB/min, 1080p ≈ 120, 720p ≈ 67).
 
 **149 pruebas verdes**: 22 nuevas (`test-guardar-en-disco.js`) + 44 + 20 + 14 + 11 + 17 + 21.
+
+## 26-10-2026 · "de repente no se escucha el sonido" + "no se alcanzó a grabar nada" + la voz que no sigue
+
+Su reclamo, textual: *"de repente no se escucha el sonido, eso de que me siga con la voz no funciona
+bien. Mejor que yo le pueda aumentar y disminuir la velocidad... de repente me grabo y no se escucha
+mi audio, o de repente grabo y me dice no se alcanzó a grabar nada"*.
+
+### #1 — el micrófono se abría UNA vez y nunca se miraba
+
+`encender()` corría al abrir la app y el mismo track de audio se usaba en todas las tomas. Nadie
+escuchaba `ended` ni `mute` del audio (solo del video) y `arrancar()` grababa con lo que hubiera.
+iOS termina o deja mudo el micrófono cuando te vas a otra app, entra una llamada u otro lo ocupa (el
+seguimiento por voz lo ocupaba), y **no lo devuelve** (WebKit 218815: "no hay API para desmutear,
+pide un stream nuevo"; 173268: el track nuevo puede venir "vivo" pero sin señal).
+**Reproducido en Edge**: con el track terminado, la toma arrancaba igual con el audio `ended`.
+**Arreglo (la regla, no la frase):** antes de cada toma se mira el micrófono (estado + señal medida
+con un AnalyserNode: ceros exactos 2,5 s = muerto; un micrófono real nunca da ceros) y si no está
+bien se abre uno nuevo; volver de otra app = cámara y micrófono nuevos; si se muere grabando, aviso
+fuerte + "SIN SONIDO" en el reloj, y al parar queda uno nuevo listo.
+⚠️ El medidor solo acusa silencio si ya oyó algo alguna vez: un medidor que no anda no puede pasar
+por micrófono mudo.
+
+### #2 — "no quedó nada grabado": causa ABIERTA, rastro puesto
+
+No se pudo saber por qué: la app no anotaba nada de la toma. Ahora queda **«Qué pasó en la última
+toma»** en Ajustes (localStorage, nunca sale del teléfono): estado del micrófono al tocar grabar,
+formato, si guardó en disco, cortes del grabador con su error, motivo de cada parada, trozos
+recibidos (y cuántos vacíos) y MB finales. Esperando que vuelva a pasar para leerlo.
+Sospecha sin probar: el mismo micrófono muerto (WebKit puede no escribir nada si una pista no
+entrega muestras).
+
+### #3 — fuera el seguimiento por voz
+
+Se sacó entero (modo, ajuste «Lo que ya dijiste», `test-seguimiento.js`). Quien lo tenía guardado
+pasa a «Solo». Botones − / + de 48 px sobre el de grabar, 0,4× a 3,0×, se aplican al tiro grabando
+o ensayando y quedan guardados. En «Con el dedo» se esconden.
+
+**Pruebas:** `test-microfono-y-velocidad.js` 38 (27 fallaban antes del arreglo) + robustez 20 +
+guiones 11 + dedo/versión 13 + hoja/pausa/ojo 44 + disco 22 + 21 controles de seguridad.
+**Lo que NO se pudo verificar acá:** nada de esto corrió en un iPhone. Edge prueba la lógica; si el
+medidor de señal se porta igual en WebKit lo dice la primera toma real.

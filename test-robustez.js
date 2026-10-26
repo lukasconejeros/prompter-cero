@@ -147,7 +147,7 @@ async function ajuste(p, grupo, valor) {
   {
     const p = await abrirApp(ctx, url, true);
     await ponerGuion(p, GUION_LARGO);
-    await ajuste(p, "g-modo", "voz");
+    await ajuste(p, "g-modo", "auto");   /* 26-10: el modo voz ya no existe */
     await ajuste(p, "g-cuenta", "0");
     await p.click("#b-rec");
     await p.waitForTimeout(2500);
@@ -160,7 +160,8 @@ async function ajuste(p, grupo, valor) {
     }));
     ok("el guion tiene de donde desplazarse", est.alcance > 20, "alcance " + est.alcance);
     ok("el texto avanzo solo", est.scroll > 0, "scrollTop " + est.scroll);
-    ok("le avisa por que cambio de modo", /escuchar|autom/i.test(est.aviso), est.aviso);
+    ok("no queda ningún modo que dependa de escucharte",
+      await p.evaluate(() => !document.querySelector('#g-modo button[data-v="voz"]')));
     ok("siguio grabando igual", est.grabando === "1");
     await p.click("#b-rec");
     await p.waitForTimeout(800);

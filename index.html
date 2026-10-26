@@ -21,7 +21,7 @@
 <body>
 
 <div id="app" data-pos="arriba" data-encuadre="ver" data-espejo="1" data-rec="0"
-     data-dicho="apaga" data-modo="voz" data-fondo="1" data-tapa="1" data-formato="vertical"
+     data-modo="auto" data-fondo="1" data-tapa="1" data-formato="vertical"
      data-oculto="0" data-pausa="0">
 
   <div id="marco"><video id="cam" playsinline muted autoplay></video></div>
@@ -67,6 +67,13 @@
       </button>
 
       <button class="redondo" id="b-ultimo" aria-label="Ver el último video" disabled>▶</button>
+    </div>
+
+    <!-- la velocidad del texto, a mano y aunque estés grabando (26-10) -->
+    <div id="vel-ctl" role="group" aria-label="Velocidad del texto">
+      <button id="b-menos" aria-label="Más lento">−</button>
+      <span id="vel-dato">1,0×</span>
+      <button id="b-mas" aria-label="Más rápido">+</button>
     </div>
   </div>
 
@@ -118,11 +125,6 @@
         <button type="button" data-v="medio">Al medio</button>
         <button type="button" data-v="abajo">Abajo</button>
       </div>
-      <div class="seg" id="g-dicho" role="group" aria-label="Lo que ya dijiste">
-        <button type="button" data-v="apaga">Se apaga</button>
-        <button type="button" data-v="oculta">Desaparece</button>
-        <button type="button" data-v="igual">Queda igual</button>
-      </div>
       <div class="seg" id="g-fondo" role="group" aria-label="Fondo del texto">
         <button type="button" data-v="1">Con fondo</button>
         <button type="button" data-v="0">Sin fondo</button>
@@ -132,13 +134,12 @@
     <div class="grupo">
       <span class="et">Cómo avanza</span>
       <div class="seg" id="g-modo" role="group" aria-label="Cómo avanza el texto">
-        <button type="button" data-v="voz">Te sigue</button>
         <button type="button" data-v="auto">Solo</button>
         <button type="button" data-v="dedo">Con el dedo</button>
       </div>
-      <div class="fila"><label for="s-vel">Velocidad (modo «solo»)</label><span class="dato" id="d-vel">1,0×</span></div>
+      <div class="fila"><label for="s-vel">Velocidad</label><span class="dato" id="d-vel">1,0×</span></div>
       <input type="range" id="s-vel" min="4" max="30" step="1" value="10">
-      <p class="nota" id="nota-voz"></p>
+      <p class="nota" id="nota-modo"></p>
     </div>
 
     <div class="grupo">
@@ -166,6 +167,12 @@
         <button type="button" data-v="5">5 s</button>
       </div>
       <p class="nota" id="nota-cam">Antes de grabar aparece acá lo que está entregando la cámara.</p>
+    </div>
+
+    <div class="grupo">
+      <span class="et">Qué pasó en la última toma</span>
+      <pre class="registro" id="registro">Todavía no hay ninguna toma.</pre>
+      <p class="nota">Si una toma sale sin sonido o no se guarda, sácale una captura a esto y mándamela: ahí está qué pasó.</p>
     </div>
 
     <button class="btn" id="b-reset">Volver a como venía</button>

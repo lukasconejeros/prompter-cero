@@ -99,10 +99,6 @@ button:focus-visible{outline:2px solid var(--activo);outline-offset:2px}
   text-wrap:pretty;
 }
 #texto w{display:inline;transition:opacity .12s linear,color .12s linear}
-#texto w.dicho{opacity:.28}
-#app[data-dicho="oculta"] #texto w.dicho{opacity:0}
-#app[data-dicho="igual"] #texto w.dicho{opacity:1}
-#texto w.actual{color:var(--activo);opacity:1}
 #texto.vacio{color:var(--ink-3);font-weight:500;font-size:17px;text-shadow:none}
 
 /* ============ controles ============ */
@@ -183,6 +179,42 @@ button:focus-visible{outline:2px solid var(--activo);outline-offset:2px}
   transition:border-radius .18s ease,width .18s ease,height .18s ease;
 }
 #app[data-rec="1"] #b-rec span{width:30px;height:30px;border-radius:7px}
+
+/* velocidad: − 1,0× + sobre el boton de grabar. Botones de 48 px, que el
+   pulgar les acierte sin mirar mientras hablas a camara */
+#vel-ctl{
+  position:absolute;left:50%;transform:translateX(-50%);
+  bottom:calc(112px + var(--bot));
+  display:flex;align-items:center;gap:4px;padding:4px;
+  border-radius:999px;
+  background:rgba(20,24,29,.82);
+  border:1px solid rgba(255,255,255,.14);
+}
+#vel-ctl button{
+  width:48px;height:48px;border-radius:50%;
+  font-size:26px;font-weight:600;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+}
+#vel-ctl button:active{background:rgba(255,255,255,.18)}
+#vel-dato{
+  min-width:54px;text-align:center;
+  font-family:var(--mono);font-size:16px;font-weight:600;
+  font-variant-numeric:tabular-nums;
+}
+#app[data-modo="dedo"] #vel-ctl{display:none}
+
+/* el micrófono se murió en medio de la toma: queda escrito en el reloj
+   mientras dure, no solo en un aviso que se va a los 7 s */
+#app[data-mic="mudo"] #chip-rec::after{content:"SIN SONIDO";font-family:var(--sans,inherit);font-size:12px;letter-spacing:.04em;padding-left:4px}
+#app[data-mic="mudo"] #chip-rec{background:#0A0C0F;border:2px solid var(--rec)}
+
+.registro{
+  margin:6px 0 0;padding:10px 12px;border-radius:10px;
+  background:rgba(255,255,255,.06);
+  font-family:var(--mono);font-size:12px;line-height:1.5;
+  white-space:pre-wrap;word-break:break-word;
+  max-height:240px;overflow-y:auto;
+}
 
 #b-encender{
   position:absolute;left:50%;top:50%;

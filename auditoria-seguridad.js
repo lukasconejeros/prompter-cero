@@ -132,7 +132,7 @@ if(/pagehide[\s\S]{0,200}apagarCam\(\)/.test(js)){
   fallo("MEDIO", "al cerrar la pestana la camara podria quedar viva", "falta apagar en pagehide");
 }
 
-if(/visibilitychange[\s\S]{0,160}parar\(\)/.test(js)){
+if(/visibilitychange[\s\S]{0,160}parar\(/.test(js)){   /* 26-10: parar() ahora lleva el motivo */
   ok("si te vas de la app, deja de grabar sola", "listener de visibilitychange");
 } else {
   fallo("BAJO", "si te vas de la app podria seguir grabando", "falta cortar en visibilitychange");

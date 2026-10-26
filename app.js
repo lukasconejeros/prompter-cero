@@ -6,7 +6,7 @@
    Ahora la app la dice en Ajustes y avisa sola cuando se actualiza.
    Al cambiarla hay que cambiar tambien el cache de sw.js: la prueba
    test-dedo-y-version.js falla si no coinciden. */
-var VERSION = "v8";
+var VERSION = "v9";
 window.__PC_VERSION = VERSION;
 
 /* =========================================================
@@ -36,20 +36,44 @@ function guardar(clave, valor){
   catch(e){ return false; }
 }
 
+/* EL REGISTRO DE LA ÚLTIMA TOMA (26-10-2026). Le salió "no quedó nada
+   grabado" y no había forma de saber por qué: la app no anotaba nada. Ahora
+   cada toma deja su historia en el teléfono -nunca sale de ahí, la app no
+   puede conectarse a nada- y se lee en Ajustes. Si algo vuelve a fallar, una
+   captura de eso dice qué pasó. */
+var registro = guardado("registro", []);
+if(!registro || !registro.push) registro = [];
+function registrar(txt){
+  registro.push(new Date().toTimeString().slice(0, 8) + "  " + txt);
+  if(registro.length > 60) registro = registro.slice(-60);
+  guardar("registro", registro);
+  var e = document.getElementById("registro");
+  if(e) e.textContent = registro.join("\n");
+}
+function registroNuevo(txt){ registro = []; registrar(txt); }
+
 /* =========================================================
    1 · ajustes (se guardan solos)
    ========================================================= */
 var POR_DEFECTO = {
-  tapa:34, letra:24, pos:"arriba", dicho:"apaga", fondo:"1",
-  modo:"voz", vel:10, cal:"max", enc:"ver", esp:"1", cuenta:3,
+  tapa:34, letra:24, pos:"arriba", fondo:"1",
+  modo:"auto", vel:10, cal:"max", enc:"ver", esp:"1", cuenta:3,
   formato:"vertical"
 };
 var cfg = {};
 for(var k in POR_DEFECTO){ cfg[k] = guardado(k, POR_DEFECTO[k]); }
 
+/* 26-10-2026: el seguimiento por voz se fue. Su queja: "eso de que me siga con
+   la voz no funciona bien... mejor que yo le pueda aumentar y disminuir la
+   velocidad". Ademas le peleaba el microfono a la grabacion. Quien lo tenia
+   guardado pasa a «Solo»; cualquier valor raro, igual. */
+if(cfg.modo !== "auto" && cfg.modo !== "dedo"){ cfg.modo = "auto"; guardar("modo", "auto"); }
+
+var VEL_MIN = 4, VEL_MAX = 30;      /* 0,4× a 3,0× */
+function textoVel(){ return (cfg.vel/10).toFixed(1).replace(".",",") + "×"; }
+
 function aplicarCfg(){
   app.setAttribute("data-pos", cfg.pos);
-  app.setAttribute("data-dicho", cfg.dicho);
   app.setAttribute("data-fondo", String(cfg.fondo));
   app.setAttribute("data-modo", cfg.modo);
   app.setAttribute("data-encuadre", cfg.enc);
@@ -62,10 +86,10 @@ function aplicarCfg(){
 
   $("s-tapa").value = cfg.tapa;   $("d-tapa").textContent = cfg.tapa + " %";
   $("s-letra").value = cfg.letra; $("d-letra").textContent = cfg.letra + " px";
-  $("s-vel").value = cfg.vel;     $("d-vel").textContent = (cfg.vel/10).toFixed(1).replace(".",",") + "×";
+  $("s-vel").value = cfg.vel;     $("d-vel").textContent = textoVel();
+  $("vel-dato").textContent = textoVel();
 
   marcarSeg("g-pos", cfg.pos);
-  marcarSeg("g-dicho", cfg.dicho);
   marcarSeg("g-fondo", String(cfg.fondo));
   marcarSeg("g-modo", cfg.modo);
   marcarSeg("g-cal", cfg.cal);
@@ -74,10 +98,9 @@ function aplicarCfg(){
   marcarSeg("g-esp", String(cfg.esp));
   marcarSeg("g-cuenta", String(cfg.cuenta));
 
-  $("nota-voz").textContent = cfg.modo === "voz"
-    ? (SR ? "El texto avanza cuando dices las palabras. Si tu iPhone no lo permite, te aviso y el texto sigue solo."
-          : "Este teléfono no puede escucharte: al grabar te aviso y el texto sube solo, a la velocidad de acá abajo.")
-    : (cfg.modo === "auto" ? "El texto sube parejo a la velocidad de arriba." : "Lo empujas tú con el pulgar sobre el texto.");
+  $("nota-modo").textContent = cfg.modo === "auto"
+    ? "El texto sube parejo. La velocidad también la cambias en la pantalla de grabar, con − y +, aunque estés grabando."
+    : "Lo empujas tú con el pulgar sobre el texto.";
 }
 
 function marcarSeg(id, valor){
@@ -102,14 +125,7 @@ function conectarSeg(id, clave, despues){
    2 · el guion
    ========================================================= */
 var PALABRAS_POR_MINUTO = 170;   // el ritmo real de Lukas: 170 palabras ≈ 59 s
-var guionCrudo = [], guionNorm = [], puntero = 0, palabrasEl = [];
-
-function normalizar(txt){
-  return txt.toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
-    .replace(/[^a-z0-9\s]/g," ")
-    .split(/\s+/).filter(Boolean);
-}
+var guionCrudo = [], palabrasEl = [];
 
 function cargarGuion(txt){
   var limpio = (txt || "").replace(/\s+/g," ").trim();
@@ -117,11 +133,10 @@ function cargarGuion(txt){
   if(!limpio){
     t.className = "vacio";
     t.textContent = "Toca «Guion» para pegar lo que vas a decir.";
-    guionCrudo = []; guionNorm = []; palabrasEl = []; puntero = 0;
+    guionCrudo = []; palabrasEl = [];
     return;
   }
   guionCrudo = limpio.split(" ");
-  guionNorm = guionCrudo.map(function(p){ var n = normalizar(p); return n.length ? n[0] : ""; });
 
   var html = "";
   for(var i=0;i<guionCrudo.length;i++){
@@ -130,29 +145,12 @@ function cargarGuion(txt){
   t.className = "";
   t.innerHTML = html;
   palabrasEl = t.querySelectorAll("w");
-  puntero = 0;
   $("prompter").scrollTop = 0;
   guardar("guionActual", limpio);
 }
 
-function moverPuntero(nuevo){
-  if(nuevo <= puntero || !palabrasEl.length) return;
-  /* la palabra "actual" es siempre la del puntero: no hace falta buscarla
-     recorriendo el guion entero cada vez que avanza una palabra */
-  for(var i=puntero;i<nuevo && i<palabrasEl.length;i++){ palabrasEl[i].className = "dicho"; }
-  puntero = nuevo;
-  if(palabrasEl[puntero]){
-    palabrasEl[puntero].className = "actual";
-    var p = $("prompter");
-    var off = palabrasEl[puntero].offsetTop - p.clientHeight * 0.32;
-    p.scrollTop = Math.max(0, off);
-  }
-}
-
 function reiniciarGuion(){
-  puntero = 0;
   $("prompter").scrollTop = 0;
-  for(var i=0;i<palabrasEl.length;i++){ palabrasEl[i].className = ""; }
 }
 
 function contarTa(){
@@ -356,7 +354,7 @@ function encender(){
          la imagen se congela y no hay ninguna pista de por que */
       if(vTrack){
         vTrack.onended = function(){
-          if(grabando) parar();
+          if(grabando) parar("el teléfono soltó la cámara");
           avisar("El teléfono soltó la cámara. Toca el botón del centro para volver a encenderla.", true);
           $("b-encender").hidden = false;
         };
@@ -364,10 +362,12 @@ function encender(){
       $("cam").srcObject = s;
       $("cam").play().catch(function(){});
       $("b-encender").hidden = true;
+      engancharMic();
       notaCamara();
     })
     .catch(function(e){
       var n = e && e.name ? e.name : "";
+      registrar("No se pudo abrir la cámara y el micrófono (" + (n || "error") + ").");
       if(n === "NotAllowedError"){
         avisar("Safari bloqueó la cámara. Toca «aA» en la barra, Ajustes del sitio web, y pon Cámara y Micrófono en Permitir.", true);
       } else if(n === "OverconstrainedError" || n === "NotFoundError"){
@@ -413,6 +413,106 @@ function notaCamara(){
   }
 }
 
+/* =========================================================
+   4b · EL MICRÓFONO SE REVISA ANTES Y DURANTE CADA TOMA (26-10-2026)
+   Su queja: "de repente me grabo y no se escucha mi audio". El micrófono se
+   abría UNA vez, al abrir la app, y se usaba en todas las tomas sin mirarlo.
+   El iPhone lo termina o lo deja mudo cuando te vas a otra app, entra una
+   llamada u otra cosa lo ocupa (el seguimiento por voz lo ocupaba), y no lo
+   devuelve (WebKit 218815 y 173268): desde ahí todas las tomas salían mudas
+   y nada lo decía. Además iOS a veces lo deja "vivo" pero entregando ceros,
+   así que no basta con mirar el estado: se mide la señal.
+   ========================================================= */
+var SILENCIO_MS = 2500;      /* un micrófono de verdad nunca da ceros exactos tanto rato */
+var medidor = { ctx:null, an:null, fuente:null, buf:null, int:null,
+                ultimoSonido:0, funciona:false };
+var micFallo = false, micAvisado = false;
+
+function micTrack(){ return stream ? (stream.getAudioTracks()[0] || null) : null; }
+
+/* ceros exactos durante SILENCIO_MS = micrófono muerto. Solo se cree si el
+   medidor ya demostró que en este teléfono sí oye (si no, un medidor que no
+   anda pasaría por micrófono mudo) */
+function micSinSenal(){
+  return medidor.funciona && medidor.ctx && medidor.ctx.state === "running"
+      && Date.now() - medidor.ultimoSonido > SILENCIO_MS;
+}
+
+function estadoMic(){
+  var t = micTrack();
+  if(!t) return "no hay";
+  if(t.readyState !== "live") return "terminado";
+  if(t.muted) return "silenciado por el teléfono";
+  if(!t.enabled) return "apagado";
+  if(micSinSenal()) return "mudo (no entrega sonido)";
+  return "bien";
+}
+
+function engancharMic(){
+  var t = micTrack();
+  micAvisado = false;
+  medidor.ultimoSonido = Date.now();     /* el micrófono nuevo parte con plazo */
+  if(!t){ registrar("La cámara abrió SIN micrófono."); return; }
+  t.onended = function(){ if(t === micTrack()) micSePerdio("el teléfono lo cortó"); };
+  t.onmute = function(){ if(t === micTrack()) micSePerdio("el teléfono lo silenció"); };
+  t.onunmute = function(){ if(t === micTrack()) registrar("El micrófono volvió."); };
+
+  var AC = window.AudioContext || window.webkitAudioContext;
+  if(!AC) return;
+  try{
+    if(!medidor.ctx){
+      medidor.ctx = new AC();
+      medidor.an = medidor.ctx.createAnalyser();
+      medidor.an.fftSize = 2048;
+      medidor.buf = new Float32Array(medidor.an.fftSize);
+      medidor.int = setInterval(medirMic, 150);
+    }
+    if(medidor.fuente){ try{ medidor.fuente.disconnect(); }catch(e){} }
+    medidor.fuente = medidor.ctx.createMediaStreamSource(new MediaStream([t]));
+    medidor.fuente.connect(medidor.an);
+  }catch(e){ medidor.fuente = null; }
+}
+
+function medirMic(){
+  if(!medidor.fuente || !medidor.ctx) return;
+  /* con el medidor dormido no hay dato: no se cuenta ese rato como silencio */
+  if(medidor.ctx.state !== "running"){ medidor.ultimoSonido = Date.now(); return; }
+  medidor.an.getFloatTimeDomainData(medidor.buf);
+  var pico = 0;
+  for(var i = 0; i < medidor.buf.length; i++){
+    var v = medidor.buf[i] < 0 ? -medidor.buf[i] : medidor.buf[i];
+    if(v > pico) pico = v;
+  }
+  if(pico > 0.000001){ medidor.ultimoSonido = Date.now(); medidor.funciona = true; return; }
+  if(grabando && !pausado && micSinSenal()) micSePerdio("dejó de entregar sonido");
+}
+
+/* iOS solo deja andar el medidor después de un toque */
+function despertarMedidor(){
+  if(medidor.ctx && medidor.ctx.state !== "running"){ try{ medidor.ctx.resume(); }catch(e){} }
+}
+document.addEventListener("pointerdown", despertarMedidor, true);
+
+function micSePerdio(motivo){
+  /* una vez por toma: el medidor lo detecta cada 150 ms y repetirlo llenaría
+     el registro y se comería lo que pasó antes */
+  if(grabando && micFallo) return;
+  registrar("Micrófono: " + motivo + (grabando ? " (grabando, " + segundosGrabados().toFixed(1).replace(".", ",") + " s)." : "."));
+  if(!grabando){
+    /* sin toma andando se cambia por uno nuevo al tiro, sin molestar */
+    if(motivo === "el teléfono lo cortó" && !pidiendoCam) encender().catch(function(){});
+    return;
+  }
+  /* grabando no se puede cambiar el micrófono sin cortar el video: se avisa
+     fuerte y queda marcado en el reloj, y al parar se deja uno nuevo listo */
+  micFallo = true;
+  app.setAttribute("data-mic", "mudo");
+  if(!micAvisado){
+    micAvisado = true;
+    avisar("Ojo: el micrófono dejó de grabar (" + motivo + "). Esta toma va sin sonido desde acá: párala y grábala de nuevo, el micrófono queda listo al parar.", true);
+  }
+}
+
 $("b-girar").addEventListener("click", function(){
   if(grabando){ avisar("No se puede cambiar de cámara grabando."); return; }
   frontal = !frontal;
@@ -422,101 +522,6 @@ $("b-girar").addEventListener("click", function(){
   aplicarCfg();
   encender().catch(function(){});
 });
-
-/* =========================================================
-   5 · seguimiento por voz
-   ========================================================= */
-var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-var rec = null, escuchando = false, oidoNada = null;
-
-/* Incremental a proposito: iOS corta el reconocimiento solo cada pocos segundos
-   y al volver el transcript arranca de cero. Si recalculamos desde el principio
-   con ese transcript corto, el puntero nunca supera al viejo y el texto SE CONGELA
-   a mitad de toma. Probado en test-seguimiento.js. */
-var procesadas = 0, firme = "";
-
-function avanzarCon(palabra){
-  var tope = Math.min(puntero + 8, guionNorm.length);
-  for(var k=puntero;k<tope;k++){
-    if(guionNorm[k] === palabra){ moverPuntero(k + 1); return true; }
-  }
-  return false;
-}
-
-function oirTanda(txt){
-  var pal = normalizar(txt);
-  if(pal.length < procesadas) procesadas = pal.length;   /* el interino encogio */
-  for(var i=procesadas;i<pal.length;i++){ avanzarCon(pal[i]); }
-  procesadas = pal.length;
-}
-
-function escuchar(){
-  if(!guionNorm.length) return;
-  /* SU QUEJA del 27-08: "se queda re pegado ahi, la app ya no se mueve mas".
-     Cuando el telefono no tiene reconocimiento de voz -pasa en las apps
-     instaladas de iOS y con el permiso denegado- esto se iba en silencio y el
-     texto NO AVANZABA NUNCA, sin decir ni una palabra. Ahora cae solo al modo
-     automatico y lo avisa en pantalla. */
-  if(!SR){
-    avisar("Tu teléfono no deja escucharte mientras graba. El texto sube solo; la velocidad se cambia en Ajustes.", true);
-    arrancarAuto();
-    return;
-  }
-  escuchando = true;
-  procesadas = 0; firme = "";
-  abrirRec();
-  // si en 8 segundos no oyó una sola palabra, cae al modo automático
-  oidoNada = setTimeout(function(){
-    if(escuchando && puntero === 0){
-      avisar("No te está oyendo. Cambio el texto a modo automático para que no te quedes botado.", true);
-      dejarDeEscuchar();
-      arrancarAuto();
-    }
-  }, 8000);
-}
-
-function abrirRec(){
-  try{ rec = new SR(); }catch(e){ escuchando = false; return; }
-  rec.lang = "es-CL";
-  rec.continuous = true;
-  rec.interimResults = true;
-  rec.maxAlternatives = 1;
-
-  /* solo se miran los resultados nuevos (desde resultIndex). Antes se rearmaba
-     el transcript entero en cada golpe de voz: varias veces por segundo durante
-     un minuto, y va creciendo. */
-  rec.onresult = function(ev){
-    var interino = "";
-    for(var i = ev.resultIndex; i < ev.results.length; i++){
-      var r = ev.results[i];
-      if(r.isFinal) firme += r[0].transcript + " ";
-      else interino += r[0].transcript + " ";
-    }
-    oirTanda(firme + interino);
-  };
-  /* "no-speech" y "aborted" son normales -un silencio, o el corte de iOS-: esos
-     se dejan pasar. Cualquier otro significa que no va a oir mas, y quedarse
-     mudo es justo el bug que sufrio: se cae al modo automatico y se avisa. */
-  rec.onerror = function(ev){
-    var n = ev && ev.error ? ev.error : "";
-    if(n === "no-speech" || n === "aborted") return;
-    avisar("Tu iPhone dejó de escuchar (" + (n || "error") + "). El texto sigue solo.", true);
-    dejarDeEscuchar();
-    arrancarAuto();
-  };
-  rec.onend = function(){
-    if(!escuchando) return;
-    procesadas = 0; firme = "";     /* la proxima tanda arranca de cero */
-    setTimeout(function(){ if(escuchando){ try{ rec.start(); }catch(e){ abrirRec(); } } }, 200);
-  };
-  try{ rec.start(); }catch(e){}
-}
-
-function dejarDeEscuchar(){
-  escuchando = false;
-  if(oidoNada){ clearTimeout(oidoNada); oidoNada = null; }
-  if(rec){ try{ rec.stop(); }catch(e){} }
-}
 
 /* =========================================================
    6 · avance automático
@@ -736,7 +741,7 @@ function abrirDisco(ext, mime){
       if(m.tipo === "no-cabe"){
         discoBytes = m.bytes; discoRoto = true;
         avisar("No cabe más video en el teléfono. Paré la toma y guardé lo que alcanzó a entrar.", true);
-        parar();
+        parar("no cabía más video en el teléfono");
       }
     });
   }
@@ -836,7 +841,7 @@ function rescatarPendiente(){
    7 · grabar
    ========================================================= */
 var grabador = null, trozos = [], grabando = false, t0 = 0, relojInt = null, blobFinal = null, wake = null;
-var pesado = 0, pesados = false;
+var pesado = 0, pesados = false, trozosN = 0, trozosVacios = 0;
 var pausado = false, pausaT0 = 0, pausadoTotal = 0;
 
 /* los segundos que de verdad entraron al video: el rato en pausa no cuenta */
@@ -869,12 +874,22 @@ function bitrateVideo(){
 var cuentaInt = null, pidiendoCam = false;
 
 $("b-rec").addEventListener("click", function(){
-  if(grabando){ parar(); return; }
+  if(grabando){ parar("tocaste parar"); return; }
   if(cuentaInt){ cancelarCuenta(); avisar("Cuenta cancelada."); return; }
   if(pidiendoCam) return;                 /* ya vamos, no abrir dos camaras */
-  if(!stream){
+  despertarMedidor();
+  /* ANTES de cada toma se mira el micrófono (26-10): si el teléfono lo cortó
+     o lo dejó mudo, se abre uno nuevo. Antes se grababa igual, sin sonido. */
+  var mic = estadoMic();
+  var camViva = !!(vTrack && vTrack.readyState === "live");
+  registroNuevo("Tocaste grabar. Micrófono: " + mic + ". Cámara: " + (camViva ? "bien" : "no está") + ".");
+  if(!stream || mic !== "bien" || !camViva){
+    if(stream) registrar("Abro cámara y micrófono de nuevo antes de grabar.");
     pidiendoCam = true;
-    encender().then(cuentaYGrabar).catch(function(){}).then(function(){ pidiendoCam = false; });
+    encender().then(function(){
+      if(mic !== "bien" && stream) avisar("El micrófono estaba " + mic + ": lo abrí de nuevo antes de grabar.");
+      cuentaYGrabar();
+    }).catch(function(){}).then(function(){ pidiendoCam = false; });
     return;
   }
   cuentaYGrabar();
@@ -920,6 +935,9 @@ function arrancar(){
   trozos = [];
   blobFinal = null;
   pesados = false;
+  trozosN = 0; trozosVacios = 0;
+  micFallo = false; micAvisado = false;
+  app.removeAttribute("data-mic");
 
   var op = { videoBitsPerSecond: bitrateVideo(), audioBitsPerSecond: 192000 };
   var m = mimeBueno();
@@ -940,13 +958,15 @@ function arrancar(){
     try{ grabador = new MediaRecorder(fuente); }
     catch(e2){
       soltarLienzo();
+      registrar("No se pudo crear el grabador: " + (e2.name || e2.message) + ".");
       avisar("No se pudo empezar a grabar: " + (e2.name || e2.message), true);
       return;
     }
   }
 
   grabador.ondataavailable = function(ev){
-    if(!ev.data || !ev.data.size) return;
+    trozosN++;
+    if(!ev.data || !ev.data.size){ trozosVacios++; return; }
     pesado += ev.data.size;
     /* al disco si se pudo abrir; a la memoria solo el primer segundo, mientras
        el archivo se abre, o si este teléfono no sabe guardar en disco */
@@ -964,9 +984,11 @@ function arrancar(){
      la app se quedaba con el punto rojo puesto para siempre y no reaccionaba:
      ese es el otro "se queda pegado". Ahora se cierra la toma como si hubieras
      tocado parar, y se guarda lo que alcanzo a grabar. */
-  grabador.onerror = function(){
+  grabador.onerror = function(ev){
+    var n = ev && ev.error ? (ev.error.name || ev.error.message) : "";
+    registrar("El teléfono cortó la grabación" + (n ? " (" + n + ")" : "") + ".");
     avisar("La grabación se cortó sola. Guardé lo que alcanzó a grabar.", true);
-    parar();
+    parar("el grabador se cayó");
   };
 
   /* el archivo del teléfono se abre en paralelo: lo que llegue antes de que
@@ -975,6 +997,7 @@ function arrancar(){
   var mimeArchivo = (grabador.mimeType || m || "video/mp4").split(";")[0];
   cola = Promise.resolve();
   abrirDisco(ext, mimeArchivo).then(function(sePudo){
+    registrar(sePudo ? "Guardando en el teléfono mientras grabas." : "No se pudo guardar en el teléfono: va en la memoria.");
     if(!sePudo){
       avisar("Este teléfono no puede ir guardando mientras grabas: no hagas tomas muy largas.", true);
       return;
@@ -983,7 +1006,18 @@ function arrancar(){
     for(var i = 0; i < previos.length; i++) escribirEnDisco(previos[i]);
   });
 
-  grabador.start(1000);
+  try{ grabador.start(1000); }
+  catch(e3){
+    soltarLienzo();
+    registrar("El grabador no quiso partir: " + (e3.name || e3.message) + ".");
+    avisar("No se pudo empezar a grabar: " + (e3.name || e3.message) + ". Toca grabar de nuevo.", true);
+    return;
+  }
+  var pistas = fuente.getAudioTracks();
+  registrar("Empezó a grabar: " + (grabador.mimeType || m || "formato del teléfono")
+    + (fuente !== stream ? ", recortado a vertical" : ", tal como viene la cámara")
+    + ", " + Math.round(op.videoBitsPerSecond / 1000000) + " Mbps. Micrófono en el video: "
+    + (pistas.length ? (pistas[0].readyState === "live" ? "sí" : "TERMINADO") : "NO HAY") + ".");
   pesado = 0;
   grabando = true;
   t0 = Date.now();
@@ -994,8 +1028,7 @@ function arrancar(){
   $("b-pausa").setAttribute("aria-label","Pausar la grabación");
   pedirWakeLock();
 
-  if(cfg.modo === "voz") escuchar();
-  else if(cfg.modo === "auto") arrancarAuto();
+  if(cfg.modo === "auto") arrancarAuto();
 
   /* el reloj lleva los MB al lado: el 28-08 se le fue una toma a 819,8 MB sin
      que nada se lo dijera hasta que ya no se podía guardar */
@@ -1026,9 +1059,9 @@ function pausarToma(){
   catch(e){ avisar("No se pudo pausar: " + (e.name || e.message), true); return; }
   pausado = true;
   pausaT0 = Date.now();
+  registrar("Pausa.");
   app.setAttribute("data-pausa","1");
   $("b-pausa").setAttribute("aria-label","Seguir grabando");
-  dejarDeEscuchar();
   pararAuto();
   avisar("En pausa. Toca otra vez para seguir en el mismo video.");
 }
@@ -1039,10 +1072,11 @@ function seguirToma(){
   catch(e){ avisar("No se pudo seguir: " + (e.name || e.message), true); return; }
   pausadoTotal += Date.now() - pausaT0;
   pausado = false; pausaT0 = 0;
+  medidor.ultimoSonido = Date.now();
+  registrar("Siguió grabando.");
   app.setAttribute("data-pausa","0");
   $("b-pausa").setAttribute("aria-label","Pausar la grabación");
-  if(cfg.modo === "voz") escuchar();
-  else if(cfg.modo === "auto") arrancarAuto();
+  if(cfg.modo === "auto") arrancarAuto();
   avisar("Seguimos.");
 }
 
@@ -1071,14 +1105,14 @@ $("b-tapar").addEventListener("click", function(){
   avisar(oculto ? "Guion a la vista." : "Guion escondido. Toca el ojo para traerlo de vuelta.");
 });
 
-function parar(){
+function parar(motivo){
   if(!grabando) return;
+  registrar("Paró: " + (motivo || "sin motivo") + ", a los " + segundosGrabados().toFixed(1).replace(".", ",") + " s.");
   grabando = false;
   /* si venía en pausa hay que cerrar la cuenta antes de soltar el estado, o la
      duración del video saldría con el rato parado metido dentro */
   if(pausado){ pausadoTotal += Date.now() - pausaT0; pausado = false; pausaT0 = 0; }
   if(relojInt){ clearInterval(relojInt); relojInt = null; }
-  dejarDeEscuchar();
   pararAuto();
   soltarWakeLock();
   app.setAttribute("data-rec","0");
@@ -1098,16 +1132,29 @@ var TOPE_VISOR = guardado("topeVisor", 250);   /* las pruebas lo bajan para no g
 
 function cerrarToma(){
   soltarLienzo();
+  app.removeAttribute("data-mic");
+  /* si el micrófono se murió en esta toma, la siguiente parte con uno nuevo */
+  if(micFallo){
+    micFallo = false;
+    registrar("Dejo un micrófono nuevo listo para la próxima toma.");
+    if(!pidiendoCam) encender().catch(function(){});
+  }
+  var trozosTxt = trozosN + " trozos" + (trozosVacios ? " (" + trozosVacios + " vacíos)" : "");
   var tipo = (grabador && grabador.mimeType) ? grabador.mimeType.split(";")[0] : "video/mp4";
 
   if(discoEnUso){
     cerrarDisco().then(function(f){
       discoEnUso = false;
-      if(!f || !f.size){ avisar("No quedó nada grabado. Prueba de nuevo.", true); return; }
+      if(!f || !f.size){
+        registrar("No quedó nada grabado: el teléfono entregó " + trozosTxt + " y el archivo quedó en 0 MB.");
+        avisar("No quedó nada grabado. Prueba de nuevo.", true); return;
+      }
+      registrar("Terminó bien: " + (f.size / 1048576).toFixed(1).replace(".", ",") + " MB guardados en el teléfono, " + trozosTxt + ".");
       anotarPendiente(discoNombre, tipo, f.size);
       mostrarToma(f);
     }).catch(function(e){
       discoEnUso = false;
+      registrar("No se pudo cerrar el video: " + (e && (e.name || e.message) || "error") + " (" + trozosTxt + ").");
       avisar("No se pudo cerrar el video: " + (e && (e.name || e.message) || "error"), true);
     });
     return;
@@ -1115,7 +1162,11 @@ function cerrarToma(){
 
   var b = new Blob(trozos, { type: tipo });
   trozos = [];                       /* los pedazos ya estan dentro del blob: sobran */
-  if(!b.size){ avisar("No quedó nada grabado. Prueba de nuevo.", true); return; }
+  if(!b.size){
+    registrar("No quedó nada grabado: el teléfono entregó " + trozosTxt + ", 0 MB.");
+    avisar("No quedó nada grabado. Prueba de nuevo.", true); return;
+  }
+  registrar("Terminó bien: " + (b.size / 1048576).toFixed(1).replace(".", ",") + " MB en la memoria, " + trozosTxt + ".");
   mostrarToma(b);
 }
 
@@ -1269,10 +1320,16 @@ $("s-tapa").addEventListener("input", function(){
 $("s-letra").addEventListener("input", function(){
   cfg.letra = parseInt(this.value,10); guardar("letra", cfg.letra); aplicarCfg();
 });
-$("s-vel").addEventListener("input", function(){
-  cfg.vel = parseInt(this.value,10); guardar("vel", cfg.vel); aplicarCfg();
-  if(grabando && !pausado && cfg.modo === "auto") arrancarAuto();
-});
+/* la velocidad nueva se aplica AL TIRO si el texto va subiendo (grabando o
+   ensayando), desde donde va: no salta ni vuelve atras */
+function ponerVel(v){
+  cfg.vel = Math.max(VEL_MIN, Math.min(VEL_MAX, v));
+  guardar("vel", cfg.vel); aplicarCfg();
+  if((autoRaf || grabando) && !pausado && cfg.modo === "auto") arrancarAuto();
+}
+$("s-vel").addEventListener("input", function(){ ponerVel(parseInt(this.value,10)); });
+$("b-mas").addEventListener("click", function(){ ponerVel(cfg.vel + 1); });
+$("b-menos").addEventListener("click", function(){ ponerVel(cfg.vel - 1); });
 
 $("b-encender").addEventListener("click", function(){
   $("b-encender").hidden = true;
@@ -1280,14 +1337,12 @@ $("b-encender").addEventListener("click", function(){
 });
 
 conectarSeg("g-pos","pos");
-conectarSeg("g-dicho","dicho");
 conectarSeg("g-fondo","fondo");
 conectarSeg("g-modo","modo", function(){
   if(!grabando) return;
-  dejarDeEscuchar(); pararAuto();
+  pararAuto();
   if(pausado) return;                 /* en pausa el guion NO se mueve, pase lo que pase */
-  if(cfg.modo === "voz") escuchar();
-  else if(cfg.modo === "auto") arrancarAuto();
+  if(cfg.modo === "auto") arrancarAuto();
 });
 conectarSeg("g-enc","enc");
 conectarSeg("g-formato","formato", function(){
@@ -1335,6 +1390,7 @@ $("b-limpiar").addEventListener("click", function(){
 
 /* ---- arranque ---- */
 aplicarCfg();
+if(registro.length) $("registro").textContent = registro.join("\n");
 pintarMios();
 pintarLista();
 var ultimo = guardado("guionActual", "");
@@ -1349,13 +1405,16 @@ rescatarPendiente();
 
 document.addEventListener("visibilitychange", function(){
   if(document.hidden){
-    if(grabando) parar();
+    if(grabando) parar("te fuiste de la app o se apagó la pantalla");
     return;
   }
-  /* iOS deja el video de la camara en pausa al volver de otra app: sin esto la
-     imagen se queda congelada y parece que la app murio */
-  var v = $("cam");
-  if(stream && v.paused) v.play().catch(function(){});
+  /* VOLVER DE OTRA APP = CÁMARA Y MICRÓFONO NUEVOS (26-10). Al irte, iOS
+     corta o deja mudo el micrófono y no lo devuelve: la toma siguiente salía
+     sin sonido. Antes solo se le daba play a la imagen congelada. */
+  if(stream && !grabando && !pidiendoCam){
+    registrar("Volviste a la app: abro cámara y micrófono nuevos.");
+    encender().catch(function(){});
+  }
 });
 
 /* el telefono acostado con formato vertical: avisar una vez, no cada rato */
@@ -1371,8 +1430,8 @@ function mirarGiro(){
 window.addEventListener("orientationchange", function(){ setTimeout(mirarGiro, 300); });
 window.addEventListener("resize", mirarGiro);
 window.addEventListener("pagehide", function(){
-  if(grabando) parar();          /* primero cerrar la toma, despues apagar */
-  dejarDeEscuchar(); pararAuto(); soltarLienzo(); apagarCam();
+  if(grabando) parar("se cerró la app");          /* primero cerrar la toma, despues apagar */
+  pararAuto(); soltarLienzo(); apagarCam();
 });
 
 /* LA VERSION ESCRITA, para que nunca mas tenga que adivinar si el telefono
@@ -1391,9 +1450,10 @@ window.addEventListener("pagehide", function(){
 /* sonda para el banco de pruebas: solo lee, no toca nada */
 window.__PC_DIAG = function(){
   return {
-    grabando: grabando, trozos: trozos.length, puntero: puntero,
-    escuchando: escuchando, auto: !!autoRaf, pintando: !!pintarRaf,
+    grabando: grabando, trozos: trozos.length,
+    auto: !!autoRaf, pintando: !!pintarRaf,
     pausado: pausado, estadoGrabador: grabador ? grabador.state : "-",
+    mic: estadoMic(), medidorOye: medidor.funciona,
     enDisco: discoEnUso, discoNombre: discoNombre, discoBytes: discoBytes,
     pendientes: pendientes().length, topeVisor: TOPE_VISOR,
     pesaMB: blobFinal ? Math.round(blobFinal.size / 1048576 * 10) / 10 : 0,

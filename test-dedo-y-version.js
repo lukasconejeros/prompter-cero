@@ -127,7 +127,7 @@ const ensayando = (p) => p.evaluate(() => window.__PC_DIAG().auto);
   });
 
   console.log("\nA · deslizar el guion con el dedo, EN LOS TRES MODOS");
-  for (const modo of ["voz", "auto", "dedo"]) {
+  for (const modo of ["auto", "dedo"]) {   /* 26-10: el modo voz ya no existe */
     const p = await abrirApp(ctx, url, true);
     await ponerGuion(p, GUION_LARGO);
     await ajuste(p, "g-modo", modo);
@@ -162,7 +162,7 @@ const ensayando = (p) => p.evaluate(() => window.__PC_DIAG().auto);
   {
     const p = await abrirApp(ctx, url, true);
     await ponerGuion(p, GUION_LARGO);
-    await ajuste(p, "g-modo", "voz");
+    await ajuste(p, "g-modo", "auto");
     await arrastrar(p, -260);
     const arriba = await scroll(p);
     await arrastrar(p, 260);
