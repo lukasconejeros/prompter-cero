@@ -44,7 +44,7 @@ Corren con el Edge que ya está en el PC (no descargan navegadores) y con `playw
 `whatsapp-mary`. Antes de decir que algo funciona, se corren todas:
 
 ```
-node test-microfono-y-velocidad.js  # 36 · micrófono revisado en cada toma, velocidad a mano, registro
+node test-microfono-y-velocidad.js  # 46 · micrófono revisado en cada toma, velocidad a mano, registro
 node test-robustez.js        # 20 · las fallas que sufrió en el iPhone: memoria, zoom, texto pegado
 node test-guiones.js         # 11 · los 3 guiones vienen dentro de la app y se abren
 node test-dedo-y-version.js  # 13 · el dedo sube el guion y la app dice su versión

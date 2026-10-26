@@ -47,10 +47,20 @@ function registrar(txt){
   registro.push(new Date().toTimeString().slice(0, 8) + "  " + txt);
   if(registro.length > 60) registro = registro.slice(-60);
   guardar("registro", registro);
-  var e = document.getElementById("registro");
-  if(e) e.textContent = registro.join("\n");
+  if(document.getElementById("registro")) pintarRegistro();
 }
-function registroNuevo(txt){ registro = []; registrar(txt); }
+/* la toma anterior se guarda aparte: si falló y tocas grabar de nuevo, su
+   historia no se pierde */
+function registroNuevo(txt){
+  if(registro.length) guardar("registroAnterior", registro);
+  registro = [];
+  registrar(txt);
+}
+function pintarRegistro(){
+  var ant = guardado("registroAnterior", []);
+  $("registro").textContent = registro.join("\n")
+    + (ant && ant.length ? "\n\n— la toma anterior —\n" + ant.join("\n") : "");
+}
 
 /* =========================================================
    1 · ajustes (se guardan solos)
@@ -254,6 +264,11 @@ function abrir(id){
   fijarEncuadre();
 }
 function cerrarTodo(){
+  /* el video de la revisión sonando por debajo le quita el micrófono a la
+     toma siguiente en iOS: se pausa cierres como cierres la hoja (antes
+     solo «Grabar otra toma» lo pausaba) */
+  var rv = $("rev");
+  if(rv && !rv.paused){ try{ rv.pause(); }catch(e){} }
   var hs = document.querySelectorAll(".hoja");
   for(var i=0;i<hs.length;i++){ hs[i].removeAttribute("data-abierta"); }
   $("velo").removeAttribute("data-on");
@@ -340,7 +355,20 @@ function apagarCam(){
   if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; vTrack = null; }
 }
 
+/* DE A UNO (revisión del 26-10): volver de otra app y tocar grabar al tiro
+   abría DOS cámaras a la vez; la primera quedaba viva y huérfana, y al
+   morirse avisaba "soltó la cámara" en plena toma. Si ya se está abriendo,
+   el segundo pedido espera al mismo. */
+var encendiendo = null;
 function encender(){
+  if(encendiendo) return encendiendo;
+  encendiendo = abrirCamara();
+  var listo = function(){ encendiendo = null; };
+  encendiendo.then(listo, listo);
+  return encendiendo;
+}
+
+function abrirCamara(){
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
     avisar("Este navegador no puede abrir la cámara. Ábrela en Safari.", true);
     return Promise.reject();
@@ -353,7 +381,9 @@ function encender(){
       /* iOS suelta la camara cuando entra una llamada o cambias de app: sin esto
          la imagen se congela y no hay ninguna pista de por que */
       if(vTrack){
+        var esta = vTrack;
         vTrack.onended = function(){
+          if(esta !== vTrack) return;      /* una cámara vieja que ya se reemplazó */
           if(grabando) parar("el teléfono soltó la cámara");
           avisar("El teléfono soltó la cámara. Toca el botón del centro para volver a encenderla.", true);
           $("b-encender").hidden = false;
@@ -436,6 +466,13 @@ function micTrack(){ return stream ? (stream.getAudioTracks()[0] || null) : null
 function micSinSenal(){
   return medidor.funciona && medidor.ctx && medidor.ctx.state === "running"
       && Date.now() - medidor.ultimoSonido > SILENCIO_MS;
+}
+
+/* "bien" solo vale tanto como el medidor: el registro dice si estaba oyendo */
+function estadoMedidor(){
+  if(!medidor.ctx || !medidor.fuente) return "no hay";
+  if(medidor.ctx.state !== "running") return "dormido (" + medidor.ctx.state + ")";
+  return medidor.funciona ? "oye" : "todavía no oye nada";
 }
 
 function estadoMic(){
@@ -882,11 +919,12 @@ $("b-rec").addEventListener("click", function(){
      o lo dejó mudo, se abre uno nuevo. Antes se grababa igual, sin sonido. */
   var mic = estadoMic();
   var camViva = !!(vTrack && vTrack.readyState === "live");
-  registroNuevo("Tocaste grabar. Micrófono: " + mic + ". Cámara: " + (camViva ? "bien" : "no está") + ".");
+  registroNuevo("Tocaste grabar. Micrófono: " + mic + ". Cámara: " + (camViva ? "bien" : "no está")
+    + ". Medidor de sonido: " + estadoMedidor() + ".");
   if(!stream || mic !== "bien" || !camViva){
     if(stream) registrar("Abro cámara y micrófono de nuevo antes de grabar.");
     pidiendoCam = true;
-    encender().then(function(){
+    encender().then(esperarImagen).then(function(){
       if(mic !== "bien" && stream) avisar("El micrófono estaba " + mic + ": lo abrí de nuevo antes de grabar.");
       cuentaYGrabar();
     }).catch(function(){}).then(function(){ pidiendoCam = false; });
@@ -900,6 +938,18 @@ $("b-rec").addEventListener("click", function(){
 $("cuenta").addEventListener("click", function(){
   if(cuentaInt){ cancelarCuenta(); avisar("Cuenta cancelada."); }
 });
+
+/* recién abierta, la cámara tarda un poco en dar la primera imagen: sin
+   cuenta regresiva el video partía con cuadros negros */
+function esperarImagen(){
+  return new Promise(function(res){
+    var v = $("cam"), t0 = Date.now();
+    (function mirar(){
+      if(v.videoWidth > 0 || Date.now() - t0 > 2000) return res();
+      setTimeout(mirar, 50);
+    })();
+  });
+}
 
 function cancelarCuenta(){
   if(cuentaInt){ clearInterval(cuentaInt); cuentaInt = null; }
@@ -1017,7 +1067,8 @@ function arrancar(){
   registrar("Empezó a grabar: " + (grabador.mimeType || m || "formato del teléfono")
     + (fuente !== stream ? ", recortado a vertical" : ", tal como viene la cámara")
     + ", " + Math.round(op.videoBitsPerSecond / 1000000) + " Mbps. Micrófono en el video: "
-    + (pistas.length ? (pistas[0].readyState === "live" ? "sí" : "TERMINADO") : "NO HAY") + ".");
+    + (pistas.length ? (pistas[0].readyState === "live" ? "sí" : "TERMINADO") : "NO HAY")
+    + " (" + estadoMic() + ", medidor " + estadoMedidor() + ").");
   pesado = 0;
   grabando = true;
   t0 = Date.now();
@@ -1139,7 +1190,9 @@ function cerrarToma(){
     registrar("Dejo un micrófono nuevo listo para la próxima toma.");
     if(!pidiendoCam) encender().catch(function(){});
   }
-  var trozosTxt = trozosN + " trozos" + (trozosVacios ? " (" + trozosVacios + " vacíos)" : "");
+  var trozosTxt = trozosN + " trozos" + (trozosVacios ? " (" + trozosVacios + " vacíos)" : "")
+    + ", el grabador entregó " + (pesado / 1048576).toFixed(1).replace(".", ",") + " MB"
+    + (discoEnUso ? " y el disco recibió " + (discoBytes / 1048576).toFixed(1).replace(".", ",") + " MB" : "");
   var tipo = (grabador && grabador.mimeType) ? grabador.mimeType.split(";")[0] : "video/mp4";
 
   if(discoEnUso){
@@ -1333,6 +1386,7 @@ $("b-menos").addEventListener("click", function(){ ponerVel(cfg.vel - 1); });
 
 $("b-encender").addEventListener("click", function(){
   $("b-encender").hidden = true;
+  if(grabando) return;                 /* nunca apagar la cámara de una toma andando */
   encender().catch(function(){});
 });
 
@@ -1390,7 +1444,7 @@ $("b-limpiar").addEventListener("click", function(){
 
 /* ---- arranque ---- */
 aplicarCfg();
-if(registro.length) $("registro").textContent = registro.join("\n");
+if(registro.length) pintarRegistro();
 pintarMios();
 pintarLista();
 var ultimo = guardado("guionActual", "");

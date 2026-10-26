@@ -245,3 +245,17 @@ o ensayando y quedan guardados. En «Con el dedo» se esconden.
 guiones 11 + dedo/versión 13 + hoja/pausa/ojo 44 + disco 22 + 21 controles de seguridad.
 **Lo que NO se pudo verificar acá:** nada de esto corrió en un iPhone. Edge prueba la lógica; si el
 medidor de señal se porta igual en WebKit lo dice la primera toma real.
+
+### Lo que cazó el revisor (abogado del diablo) antes de subir — commit aparte
+
+1. **Dos cámaras a la vez**: volver de otra app y tocar grabar al tiro llamaba `encender()` dos
+   veces; la primera quedaba viva y huérfana y al morirse avisaba "soltó la cámara" en plena toma.
+   Medido: 2 capturas abiertas → ahora 1. `encender()` va de a uno y `onended` ignora cámaras viejas.
+2. **El video de la revisión sonando por debajo** si cerrabas la hoja tocando afuera (solo «Grabar
+   otra toma» lo pausaba). En iOS otro audio sonando es justo lo que le quita el micrófono.
+3. **El registro**: ahora dice si el medidor estaba oyendo, cuántos MB entregó el grabador y cuántos
+   recibió el disco (para separar "no llegó nada" de "llegó y no se guardó"), y guarda la toma anterior.
+4. Tras reabrir la cámara se espera la primera imagen (sin cuenta regresiva partía en negro);
+   "SIN SONIDO" legible en pausa; con el texto abajo, la velocidad pasa arriba (lo tapaba 52 px).
+Lo que el revisor dejó dicho y sigue abierto: un micrófono recién abierto puede venir "vivo pero
+sin señal" (WebKit 173268); eso solo lo caza el medidor durante la toma, y solo si ya oyó alguna vez.

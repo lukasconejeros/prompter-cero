@@ -356,6 +356,72 @@ async function irYVolver(p) {
     await p.close();
   }
 
+  /* =================================================================
+     E · lo que encontró el revisor (abogado del diablo, 26-10)
+     ================================================================= */
+  console.log("\nE · los huecos que encontró el revisor");
+  {
+    /* E1 · volver de otra app y tocar grabar AL TIRO abría dos cámaras */
+    const CONTAR = `
+      window.__capturas = [];
+      const orig = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = (c) => orig(c).then((s) => { window.__capturas.push(s); return s; });
+    `;
+    const p = await abrirApp(ctx, url, LIMPIA + CONTAR);
+    await ponerGuion(p, GUION_LARGO);
+    await ajuste(p, "g-cuenta", "0");
+    await p.evaluate(async () => {
+      let oculto = true;
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => oculto });
+      document.dispatchEvent(new Event("visibilitychange"));
+      oculto = false;
+      document.dispatchEvent(new Event("visibilitychange"));      /* vuelve: abre cámara nueva */
+      document.querySelector('#b-rec').click();                    /* y toca grabar en el mismo instante */
+    });
+    await p.waitForTimeout(3000);
+    const vivas = await p.evaluate(() => window.__capturas.filter((s) => s.getTracks().some((t) => t.readyState === "live")).length);
+    ok("volver y grabar al tiro deja UNA sola cámara abierta, no dos", vivas === 1, vivas + " abiertas");
+    ok("y la toma arranca", await grabando(p));
+    await p.tap("#b-rec");
+    await p.waitForTimeout(2500);
+
+    /* E2 · cerrar la hoja del video tocando afuera no lo dejaba sonando */
+    await p.evaluate(() => { const v = document.getElementById("rev"); v.muted = true; return v.play().catch(() => {}); });
+    await p.waitForTimeout(300);
+    await p.evaluate(() => document.getElementById("velo").click());
+    await p.waitForTimeout(200);
+    ok("cerrar la hoja del video tocando afuera lo pausa",
+      await p.evaluate(() => document.getElementById("rev").paused));
+
+    /* E3 · el registro dice si el medidor oía y cuántos bytes entregó el grabador */
+    const r = await p.evaluate(() => document.getElementById("registro").textContent);
+    ok("el registro dice cómo estaba el medidor de sonido", /medidor/i.test(r), r.slice(0, 120));
+    ok("el registro dice cuántos MB entregó el grabador", /grabador entregó/.test(r));
+
+    /* E4 · una toma nueva no borra la historia de la anterior */
+    await p.tap("#b-rec");
+    await p.waitForTimeout(2500);
+    await p.tap("#b-rec");
+    await p.waitForTimeout(2500);
+    ok("la historia de la toma anterior se conserva",
+      /la toma anterior/.test(await p.evaluate(() => document.getElementById("registro").textContent)));
+    ok("sin errores en consola", p.__errores.length === 0, p.__errores.join(" | "));
+    await p.close();
+  }
+  {
+    /* E5 · con el texto abajo, los botones de velocidad lo tapaban */
+    const p = await abrirApp(ctx, url, LIMPIA);
+    await ponerGuion(p, GUION_LARGO);
+    await ajuste(p, "g-pos", "abajo");
+    const choque = await p.evaluate(() => {
+      const a = document.getElementById("vel-ctl").getBoundingClientRect();
+      const b = document.getElementById("prompter").getBoundingClientRect();
+      return Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+    });
+    ok("con el texto abajo, la velocidad no tapa el texto", choque === 0, choque + " px encima");
+    await p.close();
+  }
+
   await navegador.close();
   s.close();
   console.log("\n" + pasan + " OK, " + fallan + " fallan");

@@ -202,11 +202,14 @@ button:focus-visible{outline:2px solid var(--activo);outline-offset:2px}
   font-variant-numeric:tabular-nums;
 }
 #app[data-modo="dedo"] #vel-ctl{display:none}
+#app[data-pos="abajo"] #vel-ctl{bottom:auto;top:calc(70px + var(--top))}
 
 /* el micrófono se murió en medio de la toma: queda escrito en el reloj
    mientras dure, no solo en un aviso que se va a los 7 s */
 #app[data-mic="mudo"] #chip-rec::after{content:"SIN SONIDO";font-family:var(--sans,inherit);font-size:12px;letter-spacing:.04em;padding-left:4px}
-#app[data-mic="mudo"] #chip-rec{background:#0A0C0F;border:2px solid var(--rec)}
+#app[data-mic="mudo"] #chip-rec,
+#app[data-mic="mudo"][data-pausa="1"] #chip-rec{background:#0A0C0F;color:#fff;border:2px solid var(--rec)}
+#app[data-mic="mudo"] #chip-rec i{background:var(--rec)}
 
 .registro{
   margin:6px 0 0;padding:10px 12px;border-radius:10px;
