@@ -78,20 +78,32 @@ function ok(nombre, cond, detalle) {
   await pag.goto(url, { waitUntil: "load" });
   await pag.waitForTimeout(600);
 
-  // 1 · los 3 guiones llegaron dentro de la app
+  // 1 · llegaron dentro de la app: 6 de historias de la semana (30-10) + los 3 de la marca
   const cuantos = await pag.evaluate(() => (window.GUIONES_LUKAS || []).length);
-  ok("los 3 guiones vienen dentro de la app", cuantos === 3, cuantos + " cargados");
+  ok("los 9 guiones vienen dentro de la app", cuantos === 9, cuantos + " cargados");
 
   // 2 · la lista se pinta con sus nombres
   await pag.click("#b-guion");
   await pag.waitForTimeout(300);
   const nombres = await pag.$$eval("#lista-mios .n b", (ns) => ns.map((n) => n.textContent));
-  ok("se ven los 3 con su nombre", nombres.length === 3, nombres.join(" | "));
-  ok("el tercero es el del que te debe plata",
-     (nombres[2] || "").indexOf("El que te debe plata") >= 0, nombres[2] || "");
+  ok("se ven los 9 con su nombre", nombres.length === 9, nombres.join(" | "));
+  ok("el primero es el martes de la jornada de historias",
+     (nombres[0] || "").indexOf("Mar 3 · Por qué hice Waly") >= 0, nombres[0] || "");
+  ok("el último es el del que te debe plata",
+     (nombres[8] || "").indexOf("El que te debe plata") >= 0, nombres[8] || "");
 
-  // 3 · tocar el tercero lo deja cargado en el prompter Y cierra la hoja
-  await pag.click('#lista-mios button[data-mio="2"]');
+  // 2b · una historia del día trae sus 3 partes con PAUSA entre medio
+  await pag.click('#lista-mios button[data-mio="0"]');
+  await pag.waitForTimeout(400);
+  const martes = await pag.$eval("#texto", (t) => t.textContent);
+  ok("el martes trae las 3 historias con 2 pausas",
+     martes.split("PAUSA").length === 3 && martes.indexOf("Mi cuñado es gerente.") === 0
+       && martes.indexOf("Por eso hice Waly.") >= 0, martes.slice(0, 60));
+
+  // 3 · tocar el de la plata lo deja cargado en el prompter Y cierra la hoja
+  await pag.click("#b-guion");
+  await pag.waitForTimeout(300);
+  await pag.click('#lista-mios button[data-mio="8"]');
   await pag.waitForTimeout(400);
 
   const palabras = await pag.$$eval("#texto w", (ws) => ws.length);
