@@ -78,19 +78,19 @@ function ok(nombre, cond, detalle) {
   await pag.goto(url, { waitUntil: "load" });
   await pag.waitForTimeout(600);
 
-  // 1 · llegaron dentro de la app: 6 de historias de la semana (30-10) + los 3 de la marca
+  // 1 · llegaron dentro de la app: 6 de historias de la semana (30-10) + el anuncio de los 3 ganchos (01-11) + los 3 de la marca
   const cuantos = await pag.evaluate(() => (window.GUIONES_LUKAS || []).length);
-  ok("los 9 guiones vienen dentro de la app", cuantos === 9, cuantos + " cargados");
+  ok("los 10 guiones vienen dentro de la app", cuantos === 10, cuantos + " cargados");
 
   // 2 · la lista se pinta con sus nombres
   await pag.click("#b-guion");
   await pag.waitForTimeout(300);
   const nombres = await pag.$$eval("#lista-mios .n b", (ns) => ns.map((n) => n.textContent));
-  ok("se ven los 9 con su nombre", nombres.length === 9, nombres.join(" | "));
+  ok("se ven los 10 con su nombre", nombres.length === 10, nombres.join(" | "));
   ok("el primero es el martes de la jornada de historias",
      (nombres[0] || "").indexOf("Mar 3 · Por qué hice Waly") >= 0, nombres[0] || "");
   ok("el último es el del que te debe plata",
-     (nombres[8] || "").indexOf("El que te debe plata") >= 0, nombres[8] || "");
+     (nombres[9] || "").indexOf("El que te debe plata") >= 0, nombres[9] || "");
 
   // 2b · una historia del día trae sus 3 partes con PAUSA entre medio
   await pag.click('#lista-mios button[data-mio="0"]');
@@ -103,7 +103,7 @@ function ok(nombre, cond, detalle) {
   // 3 · tocar el de la plata lo deja cargado en el prompter Y cierra la hoja
   await pag.click("#b-guion");
   await pag.waitForTimeout(300);
-  await pag.click('#lista-mios button[data-mio="8"]');
+  await pag.click('#lista-mios button[data-mio="9"]');
   await pag.waitForTimeout(400);
 
   const palabras = await pag.$$eval("#texto w", (ws) => ws.length);
