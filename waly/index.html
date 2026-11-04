@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>Perfil de Waly en TikTok</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0f172e;color:#eef2fb;font:18px/1.45 system-ui,-apple-system,Segoe UI,Arial,sans-serif}
+main{max-width:520px;margin:0 auto;padding:20px 16px 50px}
+h1{font-size:26px;margin:0 0 14px}
+.foto{display:block;width:230px;height:230px;margin:0 auto 8px;border-radius:50%}
+.nota{color:#b8c4dc;font-size:15px;margin:6px 0 0}
+.paso{background:#1a2545;border-radius:12px;padding:14px;margin:12px 0}
+.copia{display:flex;gap:10px;align-items:center;background:#0a1020;border-radius:8px;padding:9px 10px;margin-top:9px}
+.copia code{flex:1;font:17px/1.35 system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#fff;word-break:break-word}
+button{background:#ffd84a;color:#1b1600;border:0;border-radius:8px;font-weight:800;padding:10px 13px;font-size:15px;flex:none}
+</style></head>
+<body><main>
+<h1>Perfil de Waly en TikTok</h1>
+<div class="paso"><b>1. Guarda la foto.</b> Mantenla apretada y elige Guardar.
+  <img class="foto" src="foto.png" alt="Waly" style="margin-top:12px"></div>
+<div class="paso"><b>2. Abre TikTok.</b> Toca Perfil, abajo a la derecha, y después Editar perfil.
+  <p class="nota">Tiene que decir lukas.conejeros. Si sale otra cuenta, toca el nombre de arriba y entra a esa.</p></div>
+<div class="paso"><b>3. Foto.</b> Toca Cambiar foto y elige la que guardaste.</div>
+<div class="paso"><b>4. Nombre.</b><div class="copia"><code>Waly</code><button>Copiar</button></div></div>
+<div class="paso"><b>5. Usuario.</b><div class="copia"><code>waly.pixel</code><button>Copiar</button></div>
+  <p class="nota">Si está ocupado, usa waly.pixel.cl. Solo se cambia 1 vez cada 30 días.</p></div>
+<div class="paso"><b>6. Biografía.</b><div class="copia"><code>Recepcionista pixel de clínicas. Contesto todo, hasta los estornudos 🎧</code><button>Copiar</button></div></div>
+<div class="paso"><b>7. Cuenta de empresa.</b> Vuelve al perfil. Toca las 3 rayitas de arriba, Ajustes y privacidad, Cuenta, Cambiar a cuenta de empresa. Elige la categoría más parecida a software o tecnología.
+  <p class="nota">Si dice Cambiar a cuenta personal, ya es de empresa: sigue.</p></div>
+<div class="paso"><b>8. Link.</b> En Editar perfil, en Sitio web:<div class="copia"><code>https://walybot.cl</code><button>Copiar</button></div></div>
+<div class="paso"><b>9. Avísale a Claude.</b> Escribe «listo». Si algo no te deja, mándale un pantallazo del mensaje.</div>
+</main>
+<script>
+document.querySelectorAll(".copia button").forEach((b) => b.onclick = async () => {
+  const t = b.previousElementSibling.textContent;
+  try { await navigator.clipboard.writeText(t); }
+  catch (e) { const a = document.createElement("textarea"); a.value = t; document.body.appendChild(a); a.select(); document.execCommand("copy"); a.remove(); }
+  b.textContent = "¡Copiado!"; setTimeout(() => { b.textContent = "Copiar"; }, 1400);
+});
+</script>
+</body></html>
